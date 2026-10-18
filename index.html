@@ -1,0 +1,3418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Madison's Magic Meadow</title>
+<!--
+  MEADOW MAGIC v0.3
+  Plain HTML/CSS/JS. No dependencies, no build step. Double-click to play.
+
+  CONTROLS (left-hand friendly, one button):
+    Move:   A / D,  Arrow keys,  Xbox left stick,  or hold the on-screen ◀ ▶
+    Act:    Space,  Xbox A button, or tap the big on-screen ★
+    Exit rooms: B button, Esc, or the on-screen ✕
+
+  SCENES: title -> meadow <-> cottage <-> dollhouse (tiny mini-game!)
+                       meadow <-> house (bedroom / kitchen / living room)
+                       meadow <-> paint (Maya's studio)
+                       meadow <-> pond (splash the ducks!) / garden gate
+                                 (wake the flowers, ring the bell)
+  ZONES (meadow, left to right): Cozy Cottage, Flower Garden, Painting Corner,
+                                Word Stones, Bramble's Hill
+
+  DRESS-UP: 23 wearable pieces (3 dresses + 20 accessories). The closet
+  starts small and GROWS every time Madison does something lovely --
+  growing flowers, splashing ducks, stacking blocks, sipping tea...
+  Open the dress-up box (title screen, or ★ at the doll-room wardrobe)
+  to see everything collected in a tidy grid and tap any piece to wear
+  it. Progress saves automatically (localStorage "mmm_save").
+
+  MUSIC: gentle, original nursery loops (including the public-domain
+  "Twinkle Twinkle / ABC" tune) are generated live with the Web Audio
+  API -- no files, no licensing. It starts on the first tap and ducks
+  under the narrator. Grown-ups: long-press the ♪ button (or press M)
+  to toggle it.
+
+  VOICE: every line lives in the VOICE_TEXT manifest (marked with
+  // === VOICE MANIFEST START/END ===). The game plays audio/<key>.mp3
+  if it exists, and falls back to browser speech otherwise. Regenerate
+  the audio folder by editing VOICE_TEXT and running build-voice.py
+  (needs Python + edge-tts: winget install python; pip install edge-tts).
+-->
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:#1d2433; overflow:hidden;
+    font-family:"Comic Sans MS","Chalkboard SE","Segoe UI",sans-serif;
+    -webkit-user-select:none; user-select:none; touch-action:none; }
+  #wrap { position:relative; width:min(100vw, 177.78vh); margin:0 auto; height:100%;
+    display:flex; align-items:center; justify-content:center; }
+  canvas { width:100%; height:auto; max-height:100vh; display:block; border-radius:12px;
+    box-shadow:0 10px 60px rgba(0,0,0,.5); background:#8fd0f5; }
+  .tbtn { position:absolute; bottom:18px; width:84px; height:84px; border-radius:50%;
+    border:4px solid rgba(255,255,255,.85); background:rgba(255,255,255,.28);
+    color:#fff; font-size:38px; display:flex; align-items:center; justify-content:center;
+    text-shadow:0 2px 6px rgba(0,0,0,.35); cursor:pointer; }
+  .tbtn:active { background:rgba(255,255,255,.55); transform:scale(.94); }
+  #btn-left  { left:18px; }
+  #btn-right { left:116px; }
+  #btn-act   { right:18px; width:104px; height:104px; font-size:52px;
+    background:rgba(255,215,130,.35); border-color:#ffe9b0; }
+  #btn-act:active { background:rgba(255,215,130,.65); }
+  #btn-exit { position:absolute; top:64px; right:14px; width:84px; height:84px; font-size:38px;
+    border-radius:50%; border:4px solid rgba(255,255,255,.9); background:rgba(220,90,90,.55);
+    color:#fff; cursor:pointer; display:none; }
+  /* Grown-up save button: small and quiet, only in the painting corner */
+  #btn-save { position:absolute; top:14px; left:14px; height:44px; padding:0 16px; font-size:17px;
+    font-family:inherit; font-weight:bold; color:#6a5a8a; background:rgba(255,255,255,.8);
+    border:3px solid #b0a0cc; border-radius:22px; cursor:pointer; display:none; }
+  #voice-btn { position:absolute; top:14px; right:14px; width:52px; height:52px;
+    border-radius:50%; border:3px solid rgba(255,255,255,.85);
+    background:rgba(255,255,255,.28); color:#fff; font-size:24px; cursor:pointer; }
+  #music-btn { position:absolute; top:14px; right:74px; width:52px; height:52px;
+    border-radius:50%; border:3px solid rgba(255,255,255,.85);
+    background:rgba(255,255,255,.28); color:#fff; font-size:24px; cursor:pointer; }
+  #hint { position:absolute; top:14px; left:14px; color:#fff; font-size:13px;
+    background:rgba(0,0,0,.35); padding:8px 14px; border-radius:20px; max-width:60%; }
+  /* P2.3: portrait phones get a friendly rotate card instead of a tiny letterboxed strip */
+  #rotate-guard { position:fixed; inset:0; z-index:99; display:none; align-items:center; justify-content:center;
+    text-align:center; font:bold 28px "Comic Sans MS",sans-serif; color:#fff;
+    background:linear-gradient(160deg,#7ec8f2,#b39ddb); padding:40px; line-height:1.6; }
+  @media (orientation:portrait) and (max-width:700px) { #rotate-guard { display:flex; } }
+</style>
+</head>
+<body>
+<div id="rotate-guard">🔄<br>Please turn your device<br>sideways to play!</div>
+<div id="wrap">
+  <canvas id="game" width="960" height="540"></canvas>
+  <div id="hint">Move: A/D or ←/→ or left stick &nbsp;•&nbsp; Act: Space or ★ &nbsp;•&nbsp; B / ✕ exits rooms</div>
+  <button id="music-btn" title="Music on/off (long-press)">♪</button>
+  <button id="voice-btn" title="Voice on/off">🔊</button>
+  <button id="btn-exit" title="Go back outside">✕</button>
+  <button id="btn-save" title="Save painting (grown-ups)">Save</button>
+  <div class="tbtn" id="btn-left">◀</div>
+  <div class="tbtn" id="btn-right">▶</div>
+  <div class="tbtn" id="btn-act">★</div>
+</div>
+
+<script>
+"use strict";
+/* ================= SETUP ================= */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 960, H = 540;
+const WORLD_W = 3900;
+const GROUND_Y = 468;
+
+/* ================= AUDIO ================= */
+let audioCtx = null;
+function blip(freq = 660, delay = 0, dur = 0.18) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const t = audioCtx.currentTime + delay;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'triangle'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + dur + 0.05);
+  } catch (e) {}
+}
+const happySound = () => { blip(523); blip(659, 0.1); blip(784, 0.2); blip(1047, 0.3); };
+
+/* ================= BACKGROUND MUSIC =================
+   Gentle, ORIGINAL nursery music generated live with the Web Audio API — no audio
+   files, no licensing, a few hundred bytes of code. A soft marimba-ish melody over
+   a warm walking bass with the faintest shaker and a barely-there kick, at a calm
+   toddler tempo. Loops include the public-domain "Twinkle Twinkle / ABC" tune plus
+   two melodies written for the meadow. It starts on the first tap/keypress (browsers
+   only allow audio after a gesture) and ducks softly whenever the narrator speaks.
+   Grown-ups toggle it with the ♪ button (long-press) or the M key. */
+let musicOn = (() => { try { const v = localStorage.getItem('mmm_music'); return v === null ? true : v === '1'; } catch (e) { return true; } })();
+let musicGain = null, musicNoiseBuf = null;
+let musicNext = 0, musicStep = 0, musicMelo = 0, musicTimer = 0, musicStarted = false;
+const mfreq = m => 440 * Math.pow(2, (m - 69) / 12);
+const MELODIES = [
+  { name: 'Twinkle', tempo: 0.52, bass: [48, 55], seq: [           // "Twinkle Twinkle / ABC" — traditional, public domain
+    [60,1],[60,1],[67,1],[67,1],[69,1],[69,1],[67,2],
+    [65,1],[65,1],[64,1],[64,1],[62,1],[62,1],[60,2],
+    [67,1],[67,1],[65,1],[65,1],[64,1],[64,1],[62,2],
+    [67,1],[67,1],[65,1],[65,1],[64,1],[64,1],[62,2],
+    [60,1],[60,1],[67,1],[67,1],[69,1],[69,1],[67,2],
+    [65,1],[65,1],[64,1],[64,1],[62,1],[62,1],[60,2] ] },
+  { name: 'Meadow', tempo: 0.58, bass: [45, 52], seq: [            // soft original lullaby
+    [69,1],[72,1],[71,1],[69,1],[67,2],[64,1],[67,1],
+    [69,2],[0,1],[69,1],[71,1],[74,1],[72,1],[71,1],
+    [69,2],[0,1],[67,1],[69,1],[71,1],[69,1],[67,1],
+    [64,2],[0,1],[62,1],[64,1],[67,1],[64,1],[62,1],[60,4] ] },
+  { name: 'Pond', tempo: 0.46, bass: [41, 48], seq: [              // bouncy little pond tune
+    [60,1],[64,1],[67,1],[64,1],[69,1],[67,1],[64,2],
+    [65,1],[64,1],[62,1],[64,1],[60,2],[0,1],[60,1],
+    [64,1],[67,1],[72,1],[67,1],[69,1],[67,1],[64,2],
+    [62,1],[64,1],[65,1],[67,1],[60,4] ] },
+];
+function mNoiseBuffer() {
+  if (musicNoiseBuf) return musicNoiseBuf;
+  const n = Math.floor(audioCtx.sampleRate * 0.2);
+  const b = audioCtx.createBuffer(1, n, audioCtx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  return (musicNoiseBuf = b);
+}
+function mNote(freq, t, dur, type, vol) {
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(musicGain);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function mShaker(t) {
+  const s = audioCtx.createBufferSource(); s.buffer = mNoiseBuffer();
+  const f = audioCtx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 5000;
+  const g = audioCtx.createGain(); g.gain.setValueAtTime(0.05, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  s.connect(f); f.connect(g); g.connect(musicGain); s.start(t); s.stop(t + 0.08);
+}
+function mKick(t) {
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.12);
+  g.gain.setValueAtTime(0.14, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+  o.connect(g); g.connect(musicGain); o.start(t); o.stop(t + 0.16);
+}
+function musicSchedule() {   // look-ahead scheduler keeps the timing rock smooth
+  if (!audioCtx || !musicOn) return;
+  const mel = MELODIES[musicMelo], tempo = mel.tempo;
+  if (currentVoice && currentVoice.paused === false) musicGain.gain.value = 0.06;   // duck under the narrator
+  else musicGain.gain.value = 0.16;
+  const look = audioCtx.currentTime + 0.25;
+  let guard = 0;
+  while (musicNext < look && guard++ < 64) {
+    const ev = mel.seq[musicStep % mel.seq.length], t = musicNext, beats = ev[1];
+    if (ev[0] > 0) mNote(mfreq(ev[0]), t, Math.min(beats * tempo * 0.95, 1.4), 'triangle', 0.16);
+    mNote(mfreq(mel.bass[musicStep % 2]), t, tempo * 0.9, 'sine', 0.09);   // walking bass
+    mShaker(t + tempo / 2);                                              // soft off-beat
+    if (musicStep % 4 === 0) mKick(t);
+    musicNext += beats * tempo;
+    musicStep++;
+  }
+}
+function startMusic() {
+  if (musicStarted || !musicOn) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (!musicGain) { musicGain = audioCtx.createGain(); musicGain.gain.value = 0.16; musicGain.connect(audioCtx.destination); }
+    musicNext = audioCtx.currentTime + 0.1; musicStep = 0;
+    musicMelo = (Math.random() * MELODIES.length) | 0;
+    musicStarted = true;
+    if (musicTimer) clearInterval(musicTimer);
+    musicTimer = setInterval(() => { try { musicSchedule(); } catch (e) {} }, 60);
+  } catch (e) {}
+}
+function stopMusic() { musicStarted = false; if (musicTimer) { clearInterval(musicTimer); musicTimer = null; } }
+function toggleMusic() {
+  musicOn = !musicOn;
+  try { localStorage.setItem('mmm_music', musicOn ? '1' : '0'); } catch (e) {}
+  const b = document.getElementById('music-btn'); if (b) b.textContent = musicOn ? '♪' : '∙';
+  if (musicOn) { musicStarted = false; startMusic(); } else stopMusic();
+}
+
+/* Bundled narrator voice: warm storyteller mp3s in ./audio, one per line below.
+   The manifest is the single source of truth — build-voice.ps1 reads it to record the
+   files, and if a file is missing the browser's own voice speaks that exact same line,
+   so the game never goes silent. */
+// === VOICE MANIFEST START (JSON — regenerate audio with build-voice.ps1) ===
+const VOICE_TEXT = {
+  "welcome": "Hello! Let's explore the meadow!",
+  "choose_character": "Who do you want to be today?",
+  "choose_color": "Now pick your favorite color!",
+  "choose_outfit": "Now pick what to wear!",
+  "cottage": "Cozy Cottage!",
+  "home": "Welcome home! This is your cozy house!",
+  "back_outside": "Let's go back outside!",
+  "garden": "Flower Garden!",
+  "pick": "You picked a flower!",
+  "pick_all": "So many pretty flowers!",
+  "paint_corner": "Painting Corner!",
+  "paint_mode": "Choose a color, then press the star to paint!",
+  "painted": "What a beautiful painting!",
+  "dragon_hill": "Bramble's Hill!",
+  "dragon_hi": "Bramble says hello!",
+  "lovely": "Your flowers look lovely!",
+  "spell_cat_intro": "Let's spell C, A, T!",
+  "spell_cat": "C, A, T. Cat!",
+  "spell_dog_intro": "Let's spell D, O, G!",
+  "spell_dog": "D, O, G. Dog!",
+  "spell_sun_intro": "Let's spell S, U, N!",
+  "spell_sun": "S, U, N. Sun!",
+  "house_quest": "Hi Madison, I'm Mabel. Can you help me find my lost blue marble?",
+  "found_marble": "You found my marble! Let's take it back to Mabel!",
+  "thank_you": "Thank you, Madison! You're the best helper in the whole meadow!",
+  "mabel_hi": "Hi Madison! I'm Mabel!",
+  "station_locked": "Earn new outfits by spelling words at the Word Stones, then change here!",
+  "station_change_me": "Just you, perfect!",
+  "station_change_hat": "You look beautiful in your Twinkle Hat!",
+  "station_change_dress": "You look beautiful in your Flower Dress!",
+  "station_change_shoes": "You look beautiful in your Sunny Shoes!",
+  "station_change_daisy_crown": "You look beautiful in your Daisy Crown!",
+  "station_change_sun_hat": "You look beautiful in your Sun Hat!",
+  "station_change_bee_antennae": "You look beautiful in your Bee Antennae!",
+  "station_change_gold_crown": "You look beautiful in your Golden Crown!",
+  "station_change_big_red_bow": "You look beautiful in your Big Red Bow!",
+  "station_change_party_hat": "You look beautiful in your Party Hat!",
+  "station_change_night_cap": "You look beautiful in your Nighty Cap!",
+  "station_change_paint_apron": "You look beautiful in your Paint Apron!",
+  "station_change_star_sash": "You look beautiful in your Star Sash!",
+  "station_change_rainbow_scarf": "You look beautiful in your Rainbow Scarf!",
+  "station_change_sparkle_cape": "You look beautiful in your Sparkle Cape!",
+  "station_change_polka_pinafore": "You look beautiful in your Polka Pinafore!",
+  "station_change_rain_boots": "You look beautiful in your Rain Boots!",
+  "station_change_ballet_slippers": "You look beautiful in your Ballet Slippers!",
+  "station_change_sparkle_trainers": "You look beautiful in your Sparkle Trainers!",
+  "station_change_rainbow_wellies": "You look beautiful in your Rainbow Wellies!",
+  "station_change_round_glasses": "You look beautiful in your Round Glasses!",
+  "station_change_flower_basket": "You look beautiful in your Flower Basket!",
+  "station_change_marble_necklace": "You look beautiful in your Marble Necklace!",
+  "station_change_butterfly_wings": "You look beautiful in your Butterfly Wings!",
+  "exit_hint": "Psst! The big red X in the corner takes you back outside!",
+  "doll_room": "The doll room! The dollies are waiting to play!",
+  "back_cottage": "Back in the cottage!",
+  "vase_empty": "Let's go pick some flowers outside!",
+  "press_star": "Press the big star to play!",
+  "pond": "The pond! The ducks say hello!",
+  "meadow": "Back to the meadow!",
+  "fairy_garden": "The fairy garden! So sparkly and glowy!",
+  "ispy_intro": "Let's play I spy! Walk around and look closely!",
+  "ispy_none": "Look around, something is hiding nearby!",
+  "ispy_alldone": "You found everything! What amazing looking!",
+  "ispy_found_star_1": "You found the golden star! 1 more hiding!",
+  "ispy_found_star_2": "You found the golden star! 2 more hiding!",
+  "ispy_found_star_3": "You found the golden star! 3 more hiding!",
+  "ispy_found_star_4": "You found the golden star! 4 more hiding!",
+  "ispy_found_heart_1": "You found the pink heart! 1 more hiding!",
+  "ispy_found_heart_2": "You found the pink heart! 2 more hiding!",
+  "ispy_found_heart_3": "You found the pink heart! 3 more hiding!",
+  "ispy_found_heart_4": "You found the pink heart! 4 more hiding!",
+  "ispy_found_feather_1": "You found the blue feather! 1 more hiding!",
+  "ispy_found_feather_2": "You found the blue feather! 2 more hiding!",
+  "ispy_found_feather_3": "You found the blue feather! 3 more hiding!",
+  "ispy_found_feather_4": "You found the blue feather! 4 more hiding!",
+  "ispy_found_shell_1": "You found the shiny shell! 1 more hiding!",
+  "ispy_found_shell_2": "You found the shiny shell! 2 more hiding!",
+  "ispy_found_shell_3": "You found the shiny shell! 3 more hiding!",
+  "ispy_found_shell_4": "You found the shiny shell! 4 more hiding!",
+  "ispy_found_key_1": "You found the tiny key! 1 more hiding!",
+  "ispy_found_key_2": "You found the tiny key! 2 more hiding!",
+  "ispy_found_key_3": "You found the tiny key! 3 more hiding!",
+  "ispy_found_key_4": "You found the tiny key! 4 more hiding!",
+  "flight_up": "Bramble says hello! Up, up and away! Wheee!",
+  "flight_land": "What a lovely flight! Thank you, Bramble!",
+  "garden_play": "The fairies say welcome! Everything is glowing for you!",
+  "garden_bloom": "A flower wakes up! Hello, little fairy!",
+  "garden_bell": "Ring the bell! The fairies are dancing!",
+  "zone_pond": "The pond!",
+  "zone_gate": "The garden gate!",
+  "zone_ispy": "I Spy Hollow!",
+  "pond_play_1": "Splish splash!",
+  "pond_play_2": "The ducks are giggling!",
+  "pond_play_3": "Hello, duckies!",
+  "doll_dress_rosie_pink": "Rosie loves her pink dress!",
+  "doll_dress_rosie_blue": "Rosie loves her blue dress!",
+  "doll_dress_rosie_sunny": "Rosie loves her sunny dress!",
+  "doll_dress_pippa_pink": "Pippa loves her pink dress!",
+  "doll_dress_pippa_blue": "Pippa loves her blue dress!",
+  "doll_dress_pippa_sunny": "Pippa loves her sunny dress!",
+  "doll_dress_lulu_pink": "Lulu loves her pink dress!",
+  "doll_dress_lulu_blue": "Lulu loves her blue dress!",
+  "doll_dress_lulu_sunny": "Lulu loves her sunny dress!",
+  "doll_brush_rosie": "Brush, brush! Rosie's hair is so soft!",
+  "doll_brush_pippa": "Brush, brush! Pippa's hair is so soft!",
+  "doll_brush_lulu": "Brush, brush! Lulu's hair is so soft!",
+  "doll_tea_rosie": "Tea party with Rosie! Sip, sip!",
+  "doll_tea_pippa": "Tea party with Pippa! Sip, sip!",
+  "doll_tea_lulu": "Tea party with Lulu! Sip, sip!",
+  "doll_dance_rosie": "Dance, Rosie, dance! Whee!",
+  "doll_dance_pippa": "Dance, Pippa, dance! Whee!",
+  "doll_dance_lulu": "Dance, Lulu, dance! Whee!",
+  "doll_sleep_rosie": "Shh, Rosie is sleepy. Night night!",
+  "doll_sleep_pippa": "Shh, Pippa is sleepy. Night night!",
+  "doll_sleep_lulu": "Shh, Lulu is sleepy. Night night!",
+  "outfit_invite_hat": "You spelled CAT! Go get a grown-up and stand on one leg while they count to 15. Then your Twinkle Hat is yours!",
+  "outfit_invite_dress": "You spelled DOG! Go get a grown-up and kick a ball together. Kick it and chase it! Then your Flower Dress is yours!",
+  "outfit_invite_shoes": "You spelled SUN! Go get a grown-up and hop like a bunny five times. Hippity hop! Then your Sunny Shoes is yours!",
+  "outfit_earned_hat": "We did it! You earned the Twinkle Hat! You will see it when you pick your character!",
+  "outfit_earned_dress": "We did it! You earned the Flower Dress! You will see it when you pick your character!",
+  "outfit_earned_shoes": "We did it! You earned the Sunny Shoes! You will see it when you pick your character!",
+  "outfit_wait_hat": "No problem! Your Twinkle Hat will be waiting whenever you are ready.",
+  "outfit_wait_dress": "No problem! Your Flower Dress will be waiting whenever you are ready.",
+  "outfit_wait_shoes": "No problem! Your Sunny Shoes will be waiting whenever you are ready.",
+  "outfit_remind_hat": "Your Twinkle Hat is still waiting. Find a grown-up whenever you like!",
+  "outfit_remind_dress": "Your Flower Dress is still waiting. Find a grown-up whenever you like!",
+  "outfit_remind_shoes": "Your Sunny Shoes is still waiting. Find a grown-up whenever you like!",
+  "unlock_daisy_crown": "You found the Daisy Crown! It's in your dress-up box!",
+  "unlock_sun_hat": "You found the Sun Hat! It's in your dress-up box!",
+  "unlock_bee_antennae": "You found the Bee Antennae! It's in your dress-up box!",
+  "unlock_gold_crown": "You found the Golden Crown! It's in your dress-up box!",
+  "unlock_big_red_bow": "You found the Big Red Bow! It's in your dress-up box!",
+  "unlock_party_hat": "You found the Party Hat! It's in your dress-up box!",
+  "unlock_night_cap": "You found the Nighty Cap! It's in your dress-up box!",
+  "unlock_paint_apron": "You found the Paint Apron! It's in your dress-up box!",
+  "unlock_star_sash": "You found the Star Sash! It's in your dress-up box!",
+  "unlock_rainbow_scarf": "You found the Rainbow Scarf! It's in your dress-up box!",
+  "unlock_sparkle_cape": "You found the Sparkle Cape! It's in your dress-up box!",
+  "unlock_polka_pinafore": "You found the Polka Pinafore! It's in your dress-up box!",
+  "unlock_rain_boots": "You found the Rain Boots! It's in your dress-up box!",
+  "unlock_ballet_slippers": "You found the Ballet Slippers! It's in your dress-up box!",
+  "unlock_sparkle_trainers": "You found the Sparkle Trainers! It's in your dress-up box!",
+  "unlock_rainbow_wellies": "You found the Rainbow Wellies! It's in your dress-up box!",
+  "unlock_round_glasses": "You found the Round Glasses! It's in your dress-up box!",
+  "unlock_flower_basket": "You found the Flower Basket! It's in your dress-up box!",
+  "unlock_marble_necklace": "You found the Marble Necklace! It's in your dress-up box!",
+  "unlock_butterfly_wings": "You found the Butterfly Wings! It's in your dress-up box!",
+  "dh_enter": "The dollhouse! Whoosh! You are as tiny as a dolly now. Let's play inside!",
+  "dh_exit": "Back in the cottage!",
+  "dh_fairy": "Pop the fairy doll's wings on! Flutter, flutter!",
+  "dh_tea": "Tea party in the dollhouse! Clink, clink, sip, sip!",
+  "dh_block_1": "One block!",
+  "dh_block_2": "Two blocks! Stack it higher!",
+  "dh_block_3": "Three blocks! Up, up, up!",
+  "dh_block_4": "Four blocks! One more!",
+  "dh_block_5": "Five blocks! A tower! Wheee!",
+  "dh_puddle": "Splash! What a puddle jump!",
+  "LC": "C", "LA": "A", "LT": "T", "LD": "D", "LO": "O",
+  "LG": "G", "LS": "S", "LU": "U", "LN": "N"
+};
+// === VOICE MANIFEST END ===
+const voiceCache = {}, voiceFailed = {};
+let voiceOn = true, voicesReady = false;
+function getVoice(key) {
+  if (voiceFailed[key]) return null;
+  if (voiceCache[key] !== undefined) return voiceCache[key];
+  const a = new Audio('audio/' + key + '.mp3');
+  a.preload = 'auto';
+  a.addEventListener('error', () => { voiceFailed[key] = true; voiceCache[key] = null; });
+  voiceCache[key] = a;
+  return a;
+}
+function preloadVoices() {
+  startMusic();                        // any tap/keypress is also the gesture audio needs
+  if (voicesReady) return; voicesReady = true;
+  ['welcome', 'choose_character', 'choose_color', 'choose_outfit'].forEach(getVoice);  // first lines ready instantly
+  pickBestVoice();
+}
+/* Fallback voice: choose the warmest English voice the browser offers, gentle cadence. */
+let bestVoice = null;
+function pickBestVoice() {
+  try {
+    const vs = speechSynthesis.getVoices();
+    if (!vs || !vs.length) return;
+    const score = v => {
+      const n = (v.name || '').toLowerCase(), lang = v.lang || '';
+      let s = 0;
+      if (/sonia|serena|libby|jenny|aria|samantha|karen|fiona|natural|female/.test(n)) s += 6;
+      if (lang.startsWith('en-GB')) s += 4;
+      else if (lang.startsWith('en')) s += 2;
+      if (/david|mark|male/.test(n)) s -= 3;
+      return s;
+    };
+    bestVoice = vs.slice().sort((a, b) => score(b) - score(a))[0] || null;
+  } catch (e) {}
+}
+try { speechSynthesis.onvoiceschanged = pickBestVoice; } catch (e) {}
+function speakFallback(text) {
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.92; u.pitch = 1.18;              // slow, warm storyteller for small ears
+    if (!bestVoice) pickBestVoice();
+    if (bestVoice) u.voice = bestVoice;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+let currentVoice = null;
+function stopVoice() {
+  try { speechSynthesis.cancel(); } catch (e) {}
+  if (currentVoice) { try { currentVoice.pause(); } catch (e) {} currentVoice = null; }
+}
+function say(key, fallback) {
+  if (!voiceOn || !key) return;
+  stopVoice();   // P0.2: never talk over another line — a 3-year-old understands neither voice
+  const text = VOICE_TEXT[key] || fallback || '';
+  const a = voicesReady ? getVoice(key) : null;
+  if (a && !voiceFailed[key]) {
+    try {
+      a.currentTime = 0;
+      const pr = a.play();
+      if (pr && pr.catch) pr.catch(() => { if (text) speakFallback(text); });
+      currentVoice = a; return;
+    } catch (e) {}
+  }
+  if (text) speakFallback(text);
+}
+const sayLetter = ch => say('L' + ch, ch);
+// P0.4: the mute button is parent-gated — a long press (1.2s) toggles it, so an
+// accidental toddler tap can't silence the game with no way back.
+function toggleVoice() {
+  voiceOn = !voiceOn;
+  document.getElementById('voice-btn').textContent = voiceOn ? '🔊' : '🔇';
+  if (!voiceOn) { stopVoice(); }
+}
+let voicePressT = 0;
+document.getElementById('voice-btn').addEventListener('pointerdown', () => { voicePressT = performance.now(); });
+document.getElementById('voice-btn').addEventListener('pointerup', () => {
+  if (voicePressT && performance.now() - voicePressT > 1200) toggleVoice();
+  voicePressT = 0;
+});
+document.getElementById('voice-btn').addEventListener('pointerleave', () => { voicePressT = 0; });
+// ♪ is parent-gated too — a long press toggles the gentle background music.
+let musicPressT = 0;
+document.getElementById('music-btn').addEventListener('pointerdown', () => { musicPressT = performance.now(); });
+document.getElementById('music-btn').addEventListener('pointerup', () => {
+  if (musicPressT && performance.now() - musicPressT > 1200) toggleMusic();
+  musicPressT = 0;
+});
+document.getElementById('music-btn').addEventListener('pointerleave', () => { musicPressT = 0; });
+
+/* ================= INPUT ================= */
+const keys = {};
+addEventListener('keydown', e => {
+  preloadVoices();   // P0.3: any gesture unlocks audio (iOS blocks speech before activation)
+  if (['ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  if (e.key.toLowerCase() === 'm') { toggleMusic(); return; }   // grown-up: M toggles music
+  keys[e.key.toLowerCase()] = true;
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+const touch = { left:false, right:false, act:false, exit:false };
+function bindHold(id, prop) {
+  const el = document.getElementById(id);
+  el.addEventListener('pointerdown', e => { e.preventDefault(); preloadVoices(); touch[prop] = true; });
+  const off = e => { e.preventDefault(); touch[prop] = false; };
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointercancel', off);
+  el.addEventListener('pointerleave', off);
+}
+bindHold('btn-left','left'); bindHold('btn-right','right'); bindHold('btn-act','act');
+bindHold('btn-exit','exit');
+document.getElementById('btn-save').addEventListener('click', e => { e.preventDefault(); preloadVoices(); savePainting(); });
+
+function getPad() {
+  try {
+    const ps = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const p of ps) if (p && p.connected) return p;
+  } catch (e) {}
+  return null;
+}
+const padButton = i => { const p = getPad(); return !!(p && p.buttons[i] && p.buttons[i].pressed); };
+
+function moveInput() {
+  let m = 0;
+  if (keys['arrowleft'] || keys['a'] || touch.left)  m -= 1;
+  if (keys['arrowright']|| keys['d'] || touch.right) m += 1;
+  const p = getPad();
+  if (p && p.axes.length) {
+    const ax = p.axes[0] || 0;
+    if (Math.abs(ax) > 0.35) m += Math.sign(ax) * Math.min(1, Math.abs(ax));
+  }
+  return Math.max(-1, Math.min(1, m));
+}
+let prevAction = false;
+function actionEdge() {
+  const down = !!(keys[' '] || keys['enter'] || touch.act || padButton(0));
+  const edge = down && !prevAction; prevAction = down; return edge;
+}
+// P2.4: held-state of ★ (paint mode repeats gently while held — one dab per ~0.45s)
+function actionHeld() {
+  return !!(keys[' '] || keys['enter'] || touch.act || padButton(0));
+}
+let prevExit = false;
+function exitEdge() {
+  const down = !!(keys['escape'] || touch.exit || padButton(1));
+  const edge = down && !prevExit; prevExit = down;
+  if (touch.exit) touch.exit = false;
+  return edge;
+}
+// Grown-up save: gamepad Y (3) or right trigger (7), keyboard S — edge-detected, paint scene only.
+let prevSave = false;
+function saveEdge() {
+  const down = !!(keys['s'] || padButton(3) || padButton(7));
+  const edge = down && !prevSave; prevSave = down;
+  return edge;
+}
+function showExit(v) { document.getElementById('btn-exit').style.display = v ? 'block' : 'none'; }
+
+// P1.2: everything important is tappable — a touch-first child taps the fairy, not ◀ ▶.
+// Tap = choose (title step 0 selects the character and advances; color/outfit taps select,
+// tapping the already-selected one confirms). In the meadow, tapping stones/flowers works.
+// Mabel answers a tap too. P0.3: any canvas tap also unlocks audio.
+canvas.addEventListener('pointerdown', e => {
+  preloadVoices();
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) / rect.width * W;
+  const cy = (e.clientY - rect.top) / rect.height * H;
+  if (ward.open) { wardTap(cx, cy); return; }   // dress-up inventory swallows taps
+  if (scene === 'title') {
+    if (titleTapCd > 0) return;   // one deliberate tap per step — no accidental skip-through
+    if (titleStep === 0) {
+      CHARACTERS.forEach((ch, i) => {
+        const x = W / 2 + (i - 1) * 230;
+        if (cx > x - 88 && cx < x + 88 && cy > 278 && cy < 492) {
+          charIndex = i; titleStep = 1; titleSaid = false; titleTapCd = 0.6; blip(784);
+        }
+      });
+    } else if (titleStep === 1) {
+      if (cy > 400 && cy < 515) {
+        COLORS.forEach((c, i) => {
+          const sx = W / 2 + (i - 2.5) * 82;
+          if (Math.abs(cx - sx) < 44) {
+            if (i === colorIndex) {                        // second tap on the chosen color = start
+              if (lookOptions().length > 1) { titleStep = 2; titleSaid = false; openWardrobe('title'); }
+              else beginMeadow();
+              titleTapCd = 0.6;
+            } else { colorIndex = i; titleTapCd = 0.35; blip(600 + i * 60); }
+          }
+        });
+      }
+    } else {
+      const win = lookWindow();                       // windowed row of wearable cards
+      for (const it of win.items) {
+        const sx = W / 2 + it.ox * 178;
+        if (cx > sx - 78 && cx < sx + 78 && cy > 290 && cy < 472) {
+          if (it.i === win.idx) { look = it.key; saveProgress(); beginMeadow(); }
+          else { titleLookIdx = it.i; titleTapCd = 0.35; blip(600 + Math.abs(it.ox) * 60); }
+          break;
+        }
+      }
+    }
+  } else if (scene === 'meadow' && fadeT < 0 && !invite && cy > 240) {
+    const wx = cx + camX;
+    for (let i = 0; i < 3; i++)                           // word stones
+      if (Math.abs(wx - STONE_XS[i]) < 110) { touchStone(i); return; }
+    let bs = null, bd = 150;                              // flowers
+    for (const s of FLOWER_SPOTS) {
+      const d = Math.abs(wx - s.x);
+      if (s.bloomed && d < bd) { bs = s; bd = d; }
+    }
+    if (bs) pickFlower(bs);
+  } else if (scene === 'house' && fadeT < 0 && cy > 240) {
+    if (cx > 292 && cx < 425) enterDollhouse();              // tap the dollhouse to climb in
+    else if (Math.abs(cx - 700) < 90) {
+      say('mabel_hi', "Hi Madison! I'm Mabel!"); happySound();
+      burst(700, GROUND_Y - 170, ['#ffd93d', '#ffffff', '#ffb3c7'], 16, 110);
+    }
+  } else if (scene === 'dollhouse' && fadeT < 0 && cy > 240) {
+    dollhouseTap(cx);
+  } else if (scene === 'dollroom' && fadeT < 0 && cy > 240) {
+    let bd = null, bdd = 110;
+    for (const d of DOLLS) { const dd = Math.abs(cx - d.x); if (dd < bdd) { bd = d; bdd = dd; } }
+    if (bd) doDollAction(bd);
+    else if (Math.abs(cx - 152) < 90) changeStation();
+  }
+});
+const CHARACTERS = [
+  { id:'fairy', name:'Fairy' }, { id:'bear', name:'Bear' }, { id:'girl', name:'Girl' },
+];
+const COLORS = [
+  { name:'Rose', c:'#ff8fb3' }, { name:'Sky', c:'#6fb7ff' }, { name:'Grape', c:'#b78fff' },
+  { name:'Mint', c:'#5fd6a4' }, { name:'Sunny', c:'#ffd166' }, { name:'Coral', c:'#ff8a5c' },
+];
+const PAINT_COLORS = ['#ff5b5b', '#4db8ff', '#ffd93d'];
+
+let scene = 'title';            // 'title' | 'meadow' | 'house' | 'dollroom' | 'paint' | ...
+let titleStep = 0;              // 0 = pick character, 1 = pick color
+let charIndex = 0, colorIndex = 0, titleCooldown = 0;
+
+const player = { x: 140, face: 1, bob: 0, twirl: 0, squash: 0, speed: 0 };
+let camX = 0;
+let particles = [];
+let banner = null;
+let lastZone = null;
+let zoneSayCd = 0;        // P2.6: debounce for zone announcements
+let starHintSaid = false; // P1.6: controls explained audibly, once
+
+const FLOWER_SPOTS = [
+  { x: 920, c:'#ff6b9d' }, { x: 970, c:'#ffd166' }, { x: 1020, c:'#b78fff' },
+  { x: 1070, c:'#ff8fb3' }, { x: 1120, c:'#6fb7ff' },
+].map(s => ({ ...s, bloomed: true, regrow: 0, pop: 0 }));
+let flowersPicked = 0;
+
+const paint = { colorIdx: 0, dabs: [], brushT: 0, selectCooldown: 0, lastSay: 0, holdT: 0, toast: '', toastT: 0 };
+
+let dragonHop = 0, dragonT = 0, dragonBlink = 3;
+
+const WORDS = [
+  { word:'CAT', intro:'spell_cat_intro', done:'spell_cat', say:'C! A! T! Cat!' },
+  { word:'DOG', intro:'spell_dog_intro', done:'spell_dog', say:'D! O! G! Dog!' },
+  { word:'SUN', intro:'spell_sun_intro', done:'spell_sun', say:'S! U! N! Sun!' },
+];
+const STONE_XS = [2170, 2250, 2330];
+let wordIdx = 0, stoneTouched = [false, false, false], wordCelebrate = 0;
+const currentWord = () => WORDS[wordIdx];
+
+// ---- Outfit quests: earned by real-world movement with a grown-up (co-play by
+// design). Deterministic + effort-linked: no randomness, no timers enforced by
+// the game, no fail state, never blocks play — the outfit simply waits. ----
+const OUTFITS = {
+  hat:   { name:'Twinkle Hat',  word:'CAT', activity:'Go get a grown-up and stand on one leg while they count to 15!',     color:'#7c6cf0' },
+  dress: { name:'Flower Dress', word:'DOG', activity:'Go get a grown-up and kick a ball together — kick it and chase it!', color:'#ff8fb3' },
+  shoes: { name:'Sunny Shoes',  word:'SUN', activity:'Go get a grown-up and hop like a bunny five times — hippity hop!',  color:'#ffcf4d' },
+};
+const WORD_OUTFIT = { CAT:'hat', DOG:'dress', SUN:'shoes' };
+let quests = { hat:'locked', dress:'locked', shoes:'locked' }; // locked | invited | unlocked
+let look = 'me';        // 'me' | 'hat' | 'dress' | 'shoes' — chosen at character select
+let invite = null;      // { outfit } while the full-screen activity invitation is showing
+let titleLookIdx = 0;
+/* ---- 20 play-earned accessories (2026-10-17): a light, no-fail celebration each time
+   she does something she already loves in the game. The closet simply grows.
+   Drawn correctly on all three characters via CHAR_A anchors (see drawOutfitFront). */
+const ACCS = {
+  daisy_crown:      { name:'Daisy Crown',      color:'#fff3b0' },
+  sun_hat:          { name:'Sun Hat',          color:'#ffd166' },
+  bee_antennae:     { name:'Bee Antennae',     color:'#ffd93d' },
+  gold_crown:       { name:'Golden Crown',     color:'#ffc93d' },
+  big_red_bow:      { name:'Big Red Bow',      color:'#ff5b5b' },
+  party_hat:        { name:'Party Hat',        color:'#ff8fb3' },
+  night_cap:        { name:'Nighty Cap',       color:'#b78fff' },
+  paint_apron:      { name:'Paint Apron',      color:'#4db8ff' },
+  star_sash:        { name:'Star Sash',        color:'#ffd166' },
+  rainbow_scarf:    { name:'Rainbow Scarf',    color:'#ff8a5c' },
+  sparkle_cape:     { name:'Sparkle Cape',     color:'#7c6cf0' },
+  polka_pinafore:   { name:'Polka Pinafore',   color:'#6fb7ff' },
+  rain_boots:       { name:'Rain Boots',       color:'#4db8ff' },
+  ballet_slippers:  { name:'Ballet Slippers',  color:'#ff9ec6' },
+  sparkle_trainers: { name:'Sparkle Trainers', color:'#ffffff' },
+  rainbow_wellies:  { name:'Rainbow Wellies',  color:'#5fd6a4' },
+  round_glasses:    { name:'Round Glasses',    color:'#8a5a34' },
+  flower_basket:    { name:'Flower Basket',    color:'#c58a5a' },
+  marble_necklace:  { name:'Marble Necklace',  color:'#6fb7ff' },
+  butterfly_wings:  { name:'Butterfly Wings',  color:'#ffb3d9' },
+};
+let unlocked = {};                 // accessory key -> true, earned through play
+const wearOrder = () => Object.keys(OUTFITS).concat(Object.keys(ACCS));
+const isWornUnlocked = k => k === 'me' || quests[k] === 'unlocked' || !!unlocked[k];
+const wearName = k => k === 'me' ? 'Just me' : (OUTFITS[k] || ACCS[k]).name;
+const wearColor = k => k === 'me' ? '#ffffff' : (OUTFITS[k] || ACCS[k]).color;
+/* Award a play-earned accessory: celebration only, never blocks, never fails.
+   The activity's own line plays first; the "you found it" line follows a beat later. */
+function awardAcc(key, x, y) {
+  const acc = ACCS[key];
+  if (!acc || unlocked[key]) return false;
+  unlocked[key] = true; saveProgress();
+  banner = { text: '🎀 ' + acc.name + '!', t: 0 };
+  burst(x === undefined ? player.x : x, y === undefined ? GROUND_Y - 100 : y,
+        [acc.color, '#ffffff', '#ffd93d'], 34, 240);
+  happySound();
+  setTimeout(() => { if (voiceOn) say('unlock_' + key, 'You found the ' + acc.name + "! It's in your dress-up box!"); }, 2500);
+  return true;
+}
+/* ---- Doll room (2026-10-03): second room, far left inside the cottage.
+   Three dolls, five one-button actions each: change outfit (persists), brush
+   hair, tea party, dance, tuck in. No fail states; everything is a celebration. */
+const DOLL_OUTFITS = [
+  { dress:'#ff8fb3', name:'pink dress' },
+  { dress:'#4db8ff', name:'blue dress', hat:'#7c6cf0' },
+  { dress:'#ffd93d', name:'sunny dress' },
+];
+const DOLL_ACTIONS = ['dress', 'brush', 'tea', 'dance', 'sleep'];
+const DOLLS = [
+  { x:350, name:'Rosie', skin:'#ffd9b8', hair:'#8a5a34', outfit:0, action:'', actionIdx:-1, actT:0 },
+  { x:520, name:'Pippa', skin:'#f2b88a', hair:'#3a2a1a', outfit:1, action:'', actionIdx:-1, actT:0 },
+  { x:690, name:'Lulu',  skin:'#ffe4c4', hair:'#d94f3d', outfit:2, action:'', actionIdx:-1, actT:0 },
+];
+function doDollAction(d) {
+  d.actionIdx = (d.actionIdx + 1) % DOLL_ACTIONS.length;
+  d.action = DOLL_ACTIONS[d.actionIdx];
+  d.actT = 3;
+  const dn = d.name.toLowerCase();
+  if (d.action === 'dress') {
+    d.outfit = (d.outfit + 1) % DOLL_OUTFITS.length;
+    const no = DOLL_OUTFITS[d.outfit], oc = no.name.split(' ')[0];   // 'pink' | 'blue' | 'sunny'
+    say('doll_dress_' + dn + '_' + oc, d.name + ' loves her ' + no.name + '!');
+    burst(d.x, GROUND_Y - 100, [no.dress, '#ffffff', '#ffd93d'], 16, 110);
+    awardAcc('polka_pinafore', d.x, GROUND_Y - 100);
+  } else if (d.action === 'brush') {
+    say('doll_brush_' + dn, 'Brush, brush! ' + d.name + "'s hair is so soft!");
+    burst(d.x, GROUND_Y - 120, ['#ffffff', '#ffd93d', '#ffb3c7'], 12, 90);
+    awardAcc('big_red_bow', d.x, GROUND_Y - 120);
+  } else if (d.action === 'tea') {
+    say('doll_tea_' + dn, 'Tea party with ' + d.name + '! Sip, sip!');
+    burst(d.x, GROUND_Y - 60, ['#ffb3c7', '#ffffff'], 10, 80);
+    awardAcc('party_hat', d.x, GROUND_Y - 60);
+  } else if (d.action === 'dance') {
+    say('doll_dance_' + dn, 'Dance, ' + d.name + ', dance! Whee!');
+    burst(d.x, GROUND_Y - 120, ['#7c6cf0', '#ff8fb3', '#ffd93d'], 16, 120);
+    awardAcc('ballet_slippers', d.x, GROUND_Y - 120);
+  } else {
+    say('doll_sleep_' + dn, 'Shh... ' + d.name + ' is sleepy. Night night!');
+    awardAcc('night_cap', d.x, GROUND_Y - 140);
+  }
+  happySound();
+}
+// Outfit changing station: the wardrobe in the doll room cycles Madison's
+// earned wearables. With nothing earned yet it's a gentle pointer, never a block.
+// quiet=true is the hold-repeat path (blips only, spoken on release — no chatter).
+function stationSayCurrent() {
+  say('station_change_' + look, look === 'me' ? 'Just you, perfect!' : 'You look beautiful in your ' + wearName(look) + '!');
+}
+function changeStation(quiet) {
+  const opts = lookOptions();
+  if (opts.length < 2) {
+    if (quiet) return;                                     // hold-repeat never nags
+    say('station_locked', 'Earn new outfits by spelling words at the Word Stones, then change here!');
+    burst(150, 300, ['#ffd93d', '#ffffff'], 12, 90);
+    return;
+  }
+  look = opts[(opts.indexOf(look) + 1) % opts.length];
+  saveProgress();
+  if (quiet) blip(700); else { happySound(); stationSayCurrent(); }
+  burst(player.x, GROUND_Y - 120, ['#ff8fb3', '#ffd93d', '#ffffff'], 18, 120);
+}
+function lookOptions(){ return ['me'].concat(wearOrder().filter(isWornUnlocked)); }
+/* ---- Shared dress-up INVENTORY (used on the title screen and at the doll-room
+   wardrobe). A tidy grid of everything she's collected; tap any piece to wear that
+   exact one. ◀ ▶ slide the selection, ★ confirms, ✕ closes. Never a fail state. ---- */
+const ward = { open:false, sel:0, mode:'title' };   // mode: 'title' | 'dollroom'
+let wardCd = 0;
+function openWardrobe(mode){
+  ward.open = true; ward.mode = mode; wardCd = 0.15;
+  ward.sel = Math.max(0, lookOptions().indexOf(look));
+  if (mode === 'title') say('choose_outfit', 'Now pick what to wear!');
+}
+function closeWardrobe(){ ward.open = false; }
+function wardrobePick(i){
+  const opts = lookOptions(); if (i < 0 || i >= opts.length) return;
+  look = opts[i]; saveProgress(); ward.sel = i;
+  happySound(); stationSayCurrent();
+  if (ward.mode === 'dollroom') burst(player.x, GROUND_Y - 120, ['#ff8fb3','#ffd93d','#ffffff'], 18, 120);
+}
+// grid geometry — shared by the drawer and the hit-test so they can never drift
+function wardrobeCells(){
+  const opts = lookOptions(), cols = 5, cw = 121, ch = 68, x0 = 282, y0 = 96, sx = 129, sy = 76;
+  return opts.map((k, i) => ({ key:k, i, x:x0 + (i % cols) * sx, y:y0 + (((i / cols) | 0)) * sy, w:cw, h:ch }));
+}
+function wardAt(cx, cy){
+  for (const c of wardrobeCells()) if (cx > c.x && cx < c.x + c.w && cy > c.y && cy < c.y + c.h) return c.i;
+  return -1;
+}
+function updateWardrobe(dt){
+  if (wardCd > 0) wardCd -= dt;
+  const opts = lookOptions(), n = opts.length;
+  const m = moveInput();
+  if (m !== 0 && wardCd <= 0) { ward.sel = ((ward.sel + (m > 0 ? 1 : n - 1)) % n + n) % n; wardCd = 0.16; blip(600); }
+  if (actionEdge()) {
+    if (ward.mode === 'title') { look = opts[ward.sel]; saveProgress(); beginMeadow(); }
+    else wardrobePick(ward.sel);
+  }
+  if (exitEdge()) {
+    if (ward.mode === 'title') { closeWardrobe(); titleStep = 1; titleSaid = false; }
+    else closeWardrobe();
+    blip(392);
+  }
+}
+function wardTap(cx, cy){
+  const i = wardAt(cx, cy); if (i < 0) return;
+  ward.sel = i;
+  if (ward.mode === 'title') { look = lookOptions()[i]; saveProgress(); beginMeadow(); }
+  else wardrobePick(i);
+}
+function drawWardrobe(time){
+  const opts = lookOptions(), cells = wardrobeCells();
+  ctx.fillStyle = 'rgba(30,25,55,.55)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#fffdf4'; rr(20, 16, 920, 508, 28); ctx.fill();
+  ctx.strokeStyle = '#b9a7e0'; ctx.lineWidth = 5; rr(20, 16, 920, 508, 28); ctx.stroke();
+  outlineText('Your dress-up box', W / 2, 52, 'bold 30px "Comic Sans MS",sans-serif', '#5a4a8a', '#fff', 0);
+  // live preview of the highlighted piece on her character
+  const saved = look; look = opts[ward.sel];
+  ctx.fillStyle = 'rgba(0,0,0,.08)'; ell(150, 452, 82, 12);
+  drawCharacter(CHARACTERS[charIndex].id, colorIndex, 150, 438, 1.12, time, 1);
+  look = saved;
+  const nm = wearName(opts[ward.sel]);
+  ctx.font = 'bold 22px "Comic Sans MS",sans-serif';
+  const nw = Math.min(210, ctx.measureText(nm).width + 34);
+  ctx.fillStyle = '#ffe14d'; rr(150 - nw / 2, 470, nw, 34, 17); ctx.fill();
+  ctx.fillStyle = '#5a4a8a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(nm, 150, 488);
+  // the grid of everything collected
+  for (const c of cells){
+    const sel = c.i === ward.sel, worn = opts[c.i] === look;
+    ctx.fillStyle = sel ? '#ffe9b0' : 'rgba(240,235,250,.9)'; rr(c.x, c.y, c.w, c.h, 16); ctx.fill();
+    ctx.strokeStyle = sel ? '#ffb347' : 'rgba(150,130,190,.5)'; ctx.lineWidth = sel ? 4 : 2;
+    rr(c.x, c.y, c.w, c.h, 16); ctx.stroke();
+    ctx.fillStyle = wearColor(c.key); circle(c.x + 24, c.y + c.h / 2, 15);
+    ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth = 2; circle(c.x + 24, c.y + c.h / 2, 15); ctx.stroke();
+    ctx.fillStyle = '#4a4468'; ctx.font = 'bold 15px "Comic Sans MS",sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    let label = wearName(c.key); if (ctx.measureText(label).width > c.w - 54) label = label.slice(0, 9) + '…';
+    ctx.fillText(label, c.x + 46, c.y + c.h / 2);
+    if (worn){ ctx.fillStyle = '#7bc96f'; circle(c.x + c.w - 14, c.y + 14, 9); ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText('✓', c.x + c.w - 14, c.y + 14); }
+  }
+  ctx.fillStyle = '#8a86a8'; ctx.font = '20px "Comic Sans MS",sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('tap a piece to wear it   •   ◀ ▶  choose   •   ' + (ward.mode === 'title' ? '★  start' : '✕  close'), W / 2, 505);
+}
+function saveProgress(){ try{ localStorage.setItem('mmm_save', JSON.stringify({quests, look, unlocked: Object.keys(unlocked)})); }catch(e){} }
+function loadProgress(){
+  try{
+    const s = JSON.parse(localStorage.getItem('mmm_save'));
+    if (s){
+      if (s.quests) for (const k of Object.keys(OUTFITS)) if (s.quests[k]) quests[k]=s.quests[k];
+      if (s.unlocked) for (const k of s.unlocked) if (ACCS[k]) unlocked[k]=true;
+      if (s.look && isWornUnlocked(s.look)) look=s.look;
+    }
+  }catch(e){}
+}
+loadProgress();
+
+// ---- Warm scene transitions: a soft cream fade (never a hard black cut) ----
+let fadeT = -1;      // -1 = idle, otherwise 0..1
+let fadeMid = null, fadeEnd = null;
+function fadeTo(mid, end){ if (fadeT>=0) return; fadeT=0; fadeMid=mid||null; fadeEnd=end||null; }
+// P0.1: one gentle spoken exit hint per visit — the ✕ is never a mystery.
+// Said once, ~6s after arrival, only if she's still there. Never nagging.
+function exitHintSoon(sceneName) {
+  setTimeout(() => {
+    if (scene === sceneName) say('exit_hint', 'Psst! The big red X in the corner takes you back outside!');
+  }, 6000);
+}
+
+/* Mabel's marble quest */
+let quest = 'none';            // none → seeking → found → cooldown
+let marbleX = 0;
+const MARBLE_SPOTS = [700, 1300, 1950, 2450];
+
+/* Ambient life */
+const clouds = [
+  { x: 150, y: 80, s: 1.0 }, { x: 650, y: 140, s: 1.4 }, { x: 1200, y: 70, s: 0.8 },
+  { x: 1750, y: 120, s: 1.2 }, { x: 2300, y: 85, s: 0.9 }, { x: 2800, y: 150, s: 1.3 },
+];
+let birds = [], birdTimer = 3;
+let leaves = [];
+for (let i = 0; i < 14; i++) leaves.push({
+  x: Math.random() * W, y: Math.random() * H, s: 5 + Math.random() * 7,
+  rot: Math.random() * 7, vr: (Math.random() - 0.5) * 3, vx: 25 + Math.random() * 45,
+  ph: Math.random() * 7, c: ['#ffb3c7','#ffd166','#c5e8a8','#ff9f7a'][(Math.random() * 4) | 0],
+});
+const butterflies = [
+  { hx: 950, hy: 330, ph: 0, c:'#c49fff' }, { hx: 1050, hy: 300, ph: 2, c:'#ff9fcf' },
+  { hx: 700, hy: 350, ph: 4, c:'#8fd0ff' },
+];
+let smokeTimer = 0, emberTimer = 0;
+let carriage = null, carriageTimer = 8;   // horse-drawn carriage passes through the background now and then
+
+/* ---- Zones: add new meadow areas by pushing {x, name, prompt, action} ---- */
+const zones = [
+  { x: 300,  name:'Cozy Cottage',    prompt:'go inside',      action: enterHouse },
+  { x: 1020, name:'Flower Garden',   prompt:'pick a flower',  action: pickFlower },
+  { x: 1650, name:'Painting Corner', prompt:'paint a picture',action: enterPaint },
+  { x: 2250, name:'Word Stones',     prompt:'spell a word',   action: () => say(currentWord().intro, 'Touch each letter!') },
+  { x: 2750, name:"Bramble's Hill",  prompt:'say hello',      action: dragonZone },
+  { x: 3150, name:'Pond',           prompt:'splash at the pond', action: enterPond },
+  { x: 3450, name:'Garden Gate',    prompt:'peek in the garden', action: enterGarden },
+  { x: 3750, name:'I Spy Hollow',   prompt:'play I spy',        action: enterIspy },
+];
+
+// Dragon zone: first ★ says hello; a second ★ while Bramble is still happy takes
+// you flying. Child-paced, no surprise — flying is always a free choice.
+let dragonReady = 0;
+function dragonZone(){ if (dragonReady > 0) startFlight(); else { greetDragon(); dragonReady = 6; } }
+function dragonPrompt(z){ return (z.name === "Bramble's Hill" && dragonReady > 0) ? 'fly with Bramble!' : z.prompt; }
+
+/* ================= ACTIONS ================= */
+function burst(x, y, colors, n = 14, spread = 160, screenSpace = false) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = 40 + Math.random() * spread;
+    particles.push({ x: screenSpace ? x + camX : x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 90,
+      life: 0.9 + Math.random() * 0.5, t: 0,
+      c: colors[(Math.random() * colors.length) | 0], r: 3 + Math.random() * 4 });
+  }
+}
+function enterHouse() {
+  fadeTo(() => {
+    scene = 'house'; player.x = 160; player.speed = 0; showExit(true); exitHintSoon('house');
+    if (quest === 'none') {                                   // Mabel's marble quest begins
+      quest = 'seeking';
+      marbleX = MARBLE_SPOTS[(Math.random() * MARBLE_SPOTS.length) | 0];
+      say('house_quest', "Hi Madison! I'm Mabel. Can you help me find my lost blue marble?");
+      happySound();
+    } else if (quest === 'found') {                           // marble delivered — celebration
+      quest = 'cooldown';
+      say('thank_you', "Thank you, Madison! You're the best helper in the whole meadow!");
+      happySound();
+      burst(480, 320, ['#ffd93d', '#ff8fb3', '#b78fff', '#ffffff'], 40, 200);
+      awardAcc('marble_necklace', 480, 320);
+    } else {
+      say('home', 'Welcome home, Madison! This is your cozy house!');
+      happySound();
+    }
+  });
+}
+function exitHouse() {
+  fadeTo(() => {
+    scene = 'meadow'; player.x = 300; player.speed = 0; showExit(false);
+    camX = Math.max(0, Math.min(WORLD_W - W, player.x - W / 2));
+    if (quest === 'cooldown') quest = 'none';                 // ready for a new quest next visit
+    say('back_outside', "Let's go back outside!");
+  });
+}
+// Second room, far left inside the cottage: the doll room.
+function enterDollRoom() {
+  fadeTo(() => {
+    scene = 'dollroom'; player.x = 810; player.face = -1; player.speed = 0;
+    showExit(true); exitHintSoon('dollroom');
+    say('doll_room', "The doll room! The dollies are waiting to play!");
+  });
+}
+function exitDollRoom() {
+  fadeTo(() => {
+    scene = 'house'; player.x = 130; player.face = 1; player.speed = 0;
+    showExit(true);
+    say('back_cottage', "Back in the cottage!");
+  });
+}
+function enterPaint() {
+  fadeTo(() => {
+    paintReturnX = player.x;
+    scene = 'paint'; showExit(true); exitHintSoon('paint');
+    document.getElementById('btn-save').style.display = 'block';
+    say('paint_mode', 'Choose a color, then press the star to paint!');
+  });
+}
+function exitPaint() {
+  fadeTo(() => {
+    scene = 'meadow'; showExit(false);
+    document.getElementById('btn-save').style.display = 'none';
+    player.x = paintReturnX;
+    camX = Math.max(0, Math.min(WORLD_W - W, player.x - W / 2));
+    say('back_outside', "Let's go back outside!");
+  });
+}
+function pickFlower() {
+  const spot = FLOWER_SPOTS.filter(s => s.bloomed)
+    .sort((a, b) => Math.abs(a.x - player.x) - Math.abs(b.x - player.x))[0];
+  if (!spot) { say('pick_all', 'So many pretty flowers!'); return; }
+  spot.bloomed = false; spot.regrow = 25; spot.pop = 0.5; flowersPicked++; happySound();
+  burst(spot.x, GROUND_Y - 60, [spot.c, '#ffffff', '#ffe14d'], 22, 170);
+  blip(880); setTimeout(() => blip(1174), 90);
+  player.twirl = 0.6; player.squash = 0.28;
+  const allPicked = FLOWER_SPOTS.every(s => !s.bloomed);          // every flower out at once
+  say(allPicked ? 'pick_all' : 'pick', allPicked ? 'So many pretty flowers!' : 'You picked a flower!');
+  if (flowersPicked === 1) awardAcc('daisy_crown', spot.x, GROUND_Y - 60);
+  if (allPicked) awardAcc('sun_hat', spot.x, GROUND_Y - 60);
+}
+function findMarble() {
+  quest = 'found';
+  say('found_marble', "You found my marble! Let's take it back to Mabel!");
+  burst(marbleX, GROUND_Y - 60, ['#6fb7ff', '#ffffff', '#bfe3ff'], 24, 160);
+  happySound(); player.twirl = 0.6; player.squash = 0.28;
+  awardAcc('star_sash', marbleX, GROUND_Y - 60);
+}
+function paintDab() {
+  const bx = 480 + Math.cos(paint.brushT * 0.7) * 180;
+  const by = 275 + Math.sin(paint.brushT * 1.1) * 105;
+  paint.dabs.push({ x: bx + (Math.random() * 36 - 18), y: by + (Math.random() * 36 - 18),
+    c: PAINT_COLORS[paint.colorIdx], r: 20 + Math.random() * 12, petals: 5 + ((Math.random() * 2) | 0) });
+  if (paint.dabs.length > 40) paint.dabs.shift();
+  blip(500 + Math.random() * 500, 0, 0.12);
+  burst(bx, by, [PAINT_COLORS[paint.colorIdx], '#ffffff'], 8, 90, true);
+  const now = performance.now();
+  if (now - paint.lastSay > 4000) { paint.lastSay = now; say('painted', 'What a beautiful painting!'); }
+  if (paint.dabs.length === 1) awardAcc('paint_apron', 480, 275);   // first dab of a session
+}
+// Grown-up save (2026-10-03): renders just the paper — not the UI — to a 2x PNG,
+// downloads it, and keeps a small gallery (max 8) in localStorage. Quiet by design:
+// a little toast and a soft blip, no fanfare narration. Never blocks play.
+function savePainting() {
+  if (scene !== 'paint') return;
+  if (!paint.dabs.length) { paint.toast = 'Paint something first!'; paint.toastT = 2.2; blip(330); return; }
+  const S = 2, c = document.createElement('canvas');
+  c.width = 560 * S; c.height = 360 * S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fffdf6'; g.fillRect(0, 0, c.width, c.height);
+  g.save(); g.scale(S, S); g.translate(-200, -90);
+  const circ = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); };
+  for (const d of paint.dabs) {
+    g.fillStyle = d.c;
+    for (let p = 0; p < d.petals; p++) { const a = p * Math.PI * 2 / d.petals;
+      circ(d.x + Math.cos(a) * d.r * 0.62, d.y + Math.sin(a) * d.r * 0.62, d.r * 0.42); }
+    g.fillStyle = '#fff'; circ(d.x, d.y, d.r * 0.3);
+  }
+  g.restore();
+  const url = c.toDataURL('image/png');
+  try {
+    const gal = JSON.parse(localStorage.getItem('meadowPaintings') || '[]');
+    gal.push(url); while (gal.length > 8) gal.shift();
+    localStorage.setItem('meadowPaintings', JSON.stringify(gal));
+  } catch (e) { /* private mode etc. — the download below still works */ }
+  const a = document.createElement('a');
+  a.download = 'madisons-painting.png'; a.href = url;
+  document.body.appendChild(a); a.click(); a.remove();
+  paint.toast = 'Saved ✓'; paint.toastT = 2.2; blip(880);
+}
+function greetDragon() {
+  dragonHop = 0.9; happySound();
+  burst(2750, GROUND_Y - 130, ['#b78fff','#4db8ff','#ffe14d','#ffffff'], 22, 200);
+  say('dragon_hi', 'Bramble says hello!');
+  awardAcc('rainbow_scarf', 2750, GROUND_Y - 130);
+}
+function touchStone(i) {
+  if (stoneTouched[i] || wordCelebrate > 0 || invite) return;
+  stoneTouched[i] = true;
+  const ch = currentWord().word[i];
+  sayLetter(ch);
+  burst(STONE_XS[i], GROUND_Y - 120, ['#ffe14d', '#ffffff'], 12, 110);
+  blip(700 + i * 150);
+  if (stoneTouched.every(Boolean)) {
+    wordCelebrate = 3.2; player.squash = 0.28;
+    const w = currentWord(), okey = WORD_OUTFIT[w.word], outfit = OUTFITS[okey];
+    if (quests[okey] === 'unlocked') {
+      say(currentWord().done, currentWord().say + ' You did it!');
+    } else {
+      // Deterministic reward: the outfit is earned by doing the movement
+      // challenge with a grown-up. Full-screen invitation, never a small banner.
+      quests[okey] = 'invited'; saveProgress();
+      invite = { outfit: okey };
+      say('outfit_invite_' + okey,
+        'You spelled ' + w.word + '! ' + outfit.activity + ' Then your ' + outfit.name + ' is yours!');
+    }
+    happySound();
+    burst(player.x, GROUND_Y - 100, ['#ff8fb3','#ffd166','#b78fff','#4db8ff','#ffffff'], 40, 260);
+  }
+}
+// Honor system: the grown-up presses ★ ("We did it!") to confirm. ✕ just keeps
+// playing — the outfit waits, nothing is blocked, nothing is lost.
+function confirmInvite(){
+  const okey = invite.outfit, outfit = OUTFITS[okey];
+  invite = null;
+  quests[okey] = 'unlocked'; saveProgress();
+  player.squash = 0.35; happySound();
+  burst(player.x, GROUND_Y - 110, [outfit.color, '#ffffff', '#ffd166'], 46, 280);
+  say('outfit_earned_' + okey, 'We did it! You earned the ' + outfit.name + '! You will see it when you pick your character!');
+}
+function skipInvite(){
+  const okey = invite.outfit, outfit = OUTFITS[okey];
+  invite = null;
+  say('outfit_wait_' + okey, 'No problem! Your ' + outfit.name + ' will be waiting whenever you are ready.');
+}
+
+/* ================= DRAW HELPERS ================= */
+function rr(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function ell(x, y, rx, ry) { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 7); ctx.fill(); }
+function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+function softLight(x, y, r, a = 0.3) {                       // soft top-left highlight for 2.5D shading
+  const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.1, x, y, r);
+  g.addColorStop(0, 'rgba(255,255,255,' + a + ')'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+}
+function star(x, y, r, ir) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? ir : r;
+    ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rad, y + Math.sin(a) * rad); }
+  ctx.closePath(); ctx.fill();
+}
+function pill(cx, y, text, font) {
+  ctx.font = font || 'bold 22px "Comic Sans MS",sans-serif';
+  const w = ctx.measureText(text).width + 36;
+  ctx.fillStyle = 'rgba(20,30,50,.55)'; rr(cx - w / 2, y - 24, w, 44, 22); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, y);
+}
+function outlineText(text, x, y, font, fill, stroke, lw) {
+  ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = lw || 6; ctx.strokeStyle = stroke || 'rgba(60,40,20,.55)';
+  ctx.strokeText(text, x, y); ctx.fillStyle = fill || '#fff'; ctx.fillText(text, x, y);
+}
+
+/* ================= SKY, HILLS, GROUND ================= */
+function drawSky(time) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#5fb8f2'); g.addColorStop(0.55, '#a5defa');
+  g.addColorStop(0.8, '#e3f7ff'); g.addColorStop(1, '#fff4c9');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const sx = 830, sy = 88;                                     // sun + rotating rays
+  ctx.save(); ctx.translate(sx, sy); ctx.rotate(time * 0.15);
+  ctx.strokeStyle = 'rgba(255,214,90,.75)'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * 60, Math.sin(a) * 60);
+    ctx.lineTo(Math.cos(a) * 80, Math.sin(a) * 80); ctx.stroke(); }
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255,236,140,.35)'; circle(sx, sy, 72);
+  ctx.fillStyle = '#ffe98a'; circle(sx, sy, 48);
+  for (const c of clouds) {                                    // drifting clouds, parallax
+    let cx = (c.x - camX * 0.15 + time * 7) % (WORLD_W + 400);
+    if (cx < 0) cx += WORLD_W + 400; cx -= 200;
+    ctx.fillStyle = 'rgba(255,255,255,.95)';
+    ell(cx, c.y, 48 * c.s, 22 * c.s); ell(cx + 36 * c.s, c.y + 5 * c.s, 34 * c.s, 17 * c.s);
+    ell(cx - 38 * c.s, c.y + 6 * c.s, 32 * c.s, 16 * c.s);
+    ctx.fillStyle = 'rgba(200,225,245,.6)'; ell(cx, c.y + 12 * c.s, 44 * c.s, 12 * c.s);
+  }
+  ctx.strokeStyle = '#4a6a8a'; ctx.lineWidth = 3; ctx.lineCap = 'round';  // birds
+  for (const b of birds) {
+    const f = Math.sin(b.ph) * 7;
+    ctx.beginPath();
+    ctx.moveTo(b.x - 12, b.y); ctx.quadraticCurveTo(b.x - 6, b.y - 8 - f, b.x, b.y);
+    ctx.quadraticCurveTo(b.x + 6, b.y - 8 - f, b.x + 12, b.y);
+    ctx.stroke();
+  }
+}
+function drawCloud(time, cx, cy, s, seed) {                  // standalone puffy cloud
+  const wob = Math.sin(time * 0.8 + seed * 2) * 4;
+  ctx.fillStyle = 'rgba(255,255,255,.95)';
+  ell(cx, cy + wob, 48 * s, 22 * s);
+  ell(cx + 36 * s, cy + 5 * s + wob, 34 * s, 17 * s);
+  ell(cx - 38 * s, cy + 6 * s + wob, 32 * s, 16 * s);
+  ctx.fillStyle = 'rgba(200,225,245,.6)';
+  ell(cx, cy + 12 * s + wob, 44 * s, 12 * s);
+}
+function drawHills() {
+  ctx.fillStyle = '#c9b6ef';
+  ell(400 - camX * 0.3, GROUND_Y + 80, 480, 190); ell(1450 - camX * 0.3, GROUND_Y + 90, 540, 210);
+  ell(2500 - camX * 0.3, GROUND_Y + 80, 470, 180);
+  ctx.fillStyle = '#a5e3a5';
+  ell(150 - camX * 0.5, GROUND_Y + 90, 430, 150); ell(1100 - camX * 0.5, GROUND_Y + 95, 520, 165);
+  ell(2050 - camX * 0.5, GROUND_Y + 90, 480, 155); ell(2950 - camX * 0.5, GROUND_Y + 95, 420, 150);
+}
+const TREES = [620, 1900, 2560, 3320, 3640];
+function drawCarriage(time) {                                  // horse-drawn carriage, background cameo
+  if (!carriage) return;
+  const sx = carriage.x - camX * 0.6;
+  if (sx < -320 || sx > W + 320) return;
+  const s = 0.62, bob = Math.sin(carriage.ph) * 3, y = GROUND_Y - 24 + bob;
+  ctx.save(); ctx.translate(sx, y); ctx.scale(s, s);
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  for (let i = 0; i < 4; i++) {                               // trotting legs
+    const lx = 14 + (i % 2) * 22, sw = Math.sin(carriage.ph + (i < 2 ? 0 : Math.PI)) * 9;
+    ctx.beginPath(); ctx.moveTo(lx, -26); ctx.lineTo(lx + sw, 0); ctx.stroke();
+  }
+  ctx.fillStyle = '#b57748';                                   // horse body
+  ell(30, -40, 28, 17);
+  ctx.beginPath(); ctx.moveTo(48, -48); ctx.quadraticCurveTo(58, -62, 66, -58);
+  ctx.quadraticCurveTo(60, -48, 52, -40); ctx.closePath(); ctx.fill();
+  circle(68, -60, 11);                                        // head
+  ctx.fillStyle = '#a5673d';                                  // ear
+  ctx.beginPath(); ctx.moveTo(62, -68); ctx.lineTo(66, -78); ctx.lineTo(70, -68); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#7a4a28'; ell(56, -58, 6, 12);             // mane
+  ctx.strokeStyle = '#7a4a28'; ctx.lineWidth = 5;              // tail
+  ctx.beginPath(); ctx.moveTo(4, -44); ctx.quadraticCurveTo(-8, -34 + Math.sin(time * 3) * 4, -10, -22); ctx.stroke();
+  ctx.fillStyle = '#3a2a1a'; circle(71, -62, 1.8);             // eye
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 5;              // shaft
+  ctx.beginPath(); ctx.moveTo(8, -36); ctx.lineTo(-24, -30); ctx.stroke();
+  ctx.fillStyle = '#ff9f5a';                                  // pumpkin carriage body
+  ell(-58, -44, 36, 32);
+  ctx.strokeStyle = '#e07f3a'; ctx.lineWidth = 3;              // pumpkin ribs
+  for (let r = -1; r <= 1; r++) {
+    ctx.beginPath(); ctx.ellipse(-58 + r * 12, -44, 10, 30, 0, -0.6, 0.6); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(-58 + r * 12, -44, 10, 30, 0, Math.PI - 0.6, Math.PI + 0.6); ctx.stroke();
+  }
+  softLight(-70, -58, 26, 0.35);
+  ctx.fillStyle = '#fff3d6';                                  // door window
+  rr(-70, -58, 24, 28, 10); ctx.fill();
+  ctx.fillStyle = '#ff6b9d';                                  // little storybook heart
+  circle(-61, -46, 4); circle(-55, -46, 4);
+  ctx.beginPath(); ctx.moveTo(-65, -43); ctx.lineTo(-52, -43); ctx.lineTo(-58, -36); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffd93d';                                  // tiny crown on top
+  ctx.beginPath(); ctx.moveTo(-70, -74); ctx.lineTo(-70, -84); ctx.lineTo(-64, -78);
+  ctx.lineTo(-58, -86); ctx.lineTo(-52, -78); ctx.lineTo(-46, -84); ctx.lineTo(-46, -74);
+  ctx.closePath(); ctx.fill();
+  for (const wx of [-84, -32]) {                              // spoked wheels
+    ctx.save(); ctx.translate(wx, -14); ctx.rotate(carriage.rot);
+    ctx.strokeStyle = '#7a4a28'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(0, 0, 14, 0, 7); ctx.stroke();
+    ctx.lineWidth = 3;
+    for (let k = 0; k < 4; k++) {
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(k * Math.PI / 2) * 14, Math.sin(k * Math.PI / 2) * 14); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = '#5a3620'; circle(wx, -14, 3.5);
+  }
+  ctx.fillStyle = 'rgba(255,236,140,.9)'; circle(-94, -52, 4); // lantern glow
+  ctx.restore();
+}
+function drawTrees(time) {
+  for (const tx of TREES) {
+    const x = tx - camX; if (x < -120 || x > W + 120) continue;
+    const sway = Math.sin(time * 1.5 + tx) * 5;
+    ctx.fillStyle = '#8a5a34'; ctx.fillRect(x - 13, GROUND_Y - 95, 26, 95);
+    ctx.fillStyle = '#5fbf6f';
+    circle(x - 30 + sway, GROUND_Y - 120, 38); circle(x + 30 + sway, GROUND_Y - 120, 38);
+    circle(x + sway, GROUND_Y - 155, 46);
+    ctx.fillStyle = '#74d184';
+    circle(x - 14 + sway, GROUND_Y - 140, 20); circle(x + 16 + sway, GROUND_Y - 132, 16);
+    ctx.fillStyle = '#ff6b6b';
+    circle(x - 30 + sway, GROUND_Y - 110, 6); circle(x + 24 + sway, GROUND_Y - 150, 6);
+    circle(x + 6 + sway, GROUND_Y - 100, 6);
+  }
+}
+function drawGround() {
+  ctx.fillStyle = '#93d996'; ctx.fillRect(0, GROUND_Y, W, 18);
+  ctx.fillStyle = '#7fc983'; ctx.fillRect(0, GROUND_Y + 18, W, H - GROUND_Y);
+  ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(0, GROUND_Y, W, 4);
+  const gg = ctx.createLinearGradient(0, GROUND_Y, 0, H);       // light at horizon, depth below
+  gg.addColorStop(0, 'rgba(255,255,255,.14)'); gg.addColorStop(0.4, 'rgba(255,255,255,0)');
+  gg.addColorStop(1, 'rgba(20,60,30,.16)');
+  ctx.fillStyle = gg; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  for (let i = 0; i < 70; i++) {
+    const x = ((i * 173) % WORLD_W) - camX; if (x < -20 || x > W + 20) continue;
+    const y = GROUND_Y + 30 + ((i * 97) % 46);
+    if (i % 3 === 0) {
+      ctx.strokeStyle = '#5da862'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 4, y - 12, x + 9, y - 14); ctx.stroke();
+    } else if (i % 7 === 0) {
+      const cols = ['#ff9fcf', '#ffd166', '#ffffff', '#c49fff'];
+      ctx.fillStyle = cols[i % 4];
+      for (let p = 0; p < 5; p++) { const a = p * Math.PI * 2 / 5; circle(x + Math.cos(a) * 5, y - 8 + Math.sin(a) * 5, 3.4); }
+      ctx.fillStyle = '#ff9f2e'; circle(x, y - 8, 3);
+    } else if (i % 5 === 0) {
+      ctx.fillStyle = '#6fbf77';                                 // clover tuft
+      circle(x - 4, y - 6, 4); circle(x + 4, y - 6, 4); circle(x, y - 10, 4);
+      ctx.strokeStyle = '#4e9e57'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 8); ctx.stroke();
+    }
+  }
+  for (const z of zones) {                                     // stepping-stone paths
+    for (let s = 0; s < 3; s++) {
+      const x = z.x - 40 + s * 40 - camX, y = GROUND_Y + 46 + s * 10;
+      ctx.fillStyle = '#f2dfae';
+      ctx.beginPath(); ctx.ellipse(x, y, 20, 10, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#d9c08a'; ctx.lineWidth = 3; ctx.stroke();
+    }
+  }
+}
+function drawForeground(time) {                                // close-to-camera grass
+  for (let i = 0; i < 22; i++) {
+    const x = ((i * 197) % (W + 80)) - 40, base = H - 6;
+    const sway = Math.sin(time * 2 + i * 1.3) * 7;
+    ctx.strokeStyle = '#4e9e57'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    for (let b = -1; b <= 1; b++) {
+      ctx.beginPath(); ctx.moveTo(x + b * 10, base);
+      ctx.quadraticCurveTo(x + b * 10 + sway * 0.5, base - 24, x + b * 12 + sway, base - 36);
+      ctx.stroke();
+    }
+    if (i % 4 === 0) {
+      const fx = x + sway, fy = base - 56, cols = ['#ff8fb3', '#ffd166', '#c49fff'];
+      ctx.strokeStyle = '#4e9e57'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(x, base); ctx.lineTo(fx, fy); ctx.stroke();
+      ctx.fillStyle = cols[(((i / 4) | 0) % 3)];
+      for (let p = 0; p < 6; p++) { const a = p * Math.PI / 3 + time * 0.3;
+        circle(fx + Math.cos(a) * 11, fy + Math.sin(a) * 11, 7); }
+      ctx.fillStyle = '#fff'; circle(fx, fy, 6);
+    }
+  }
+}
+function drawLeaves() {
+  for (const l of leaves) {
+    ctx.save(); ctx.translate(l.x, l.y); ctx.rotate(l.rot);
+    ctx.globalAlpha = 0.9; ctx.fillStyle = l.c;
+    ctx.beginPath(); ctx.ellipse(0, 0, l.s, l.s * 0.55, 0, 0, 7); ctx.fill();
+    ctx.globalAlpha = 1; ctx.restore();
+  }
+}
+function drawButterflies(time) {
+  for (const b of butterflies) {
+    const x = b.hx + Math.sin(time * 0.9 + b.ph) * 70 - camX, y = b.hy + Math.sin(time * 1.7 + b.ph) * 34;
+    if (x < -30 || x > W + 30) continue;
+    const f = Math.abs(Math.sin(time * 14 + b.ph)) * 0.9;
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = b.c;
+    ctx.save(); ctx.rotate(-0.4 - f * 0.5); ell(-8, 0, 9, 13); ctx.restore();
+    ctx.save(); ctx.rotate(0.4 + f * 0.5); ell(8, 0, 9, 13); ctx.restore();
+    ctx.fillStyle = '#5a4a6a'; ell(0, 0, 3.5, 9);
+    ctx.restore();
+  }
+}
+
+/* ================= WORLD OBJECTS ================= */
+function drawSign(x, text) {
+  const sx = x - camX; if (sx < -120 || sx > W + 120) return;
+  ctx.fillStyle = '#8a5a34'; ctx.fillRect(sx - 6, GROUND_Y - 92, 12, 92);
+  ctx.fillStyle = '#fff7e0'; rr(sx - 86, GROUND_Y - 140, 172, 44, 12); ctx.fill();
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 4; rr(sx - 86, GROUND_Y - 140, 172, 44, 12); ctx.stroke();
+  ctx.fillStyle = '#7a5c3a'; ctx.font = 'bold 20px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, sx, GROUND_Y - 117);
+}
+function drawCottage() {
+  const x = 300 - camX; if (x < -260 || x > W + 260) return;
+  const y = GROUND_Y;
+  ctx.fillStyle = '#ffe9c4'; ctx.fillRect(x - 105, y - 150, 210, 150);
+  ctx.fillStyle = '#b07a4a';                                   // timber beams
+  ctx.fillRect(x - 105, y - 150, 210, 12); ctx.fillRect(x - 105, y - 12, 210, 12);
+  ctx.fillRect(x - 105, y - 150, 12, 150); ctx.fillRect(x + 93, y - 150, 12, 150);
+  ctx.fillStyle = '#e2725b';                                   // roof
+  ctx.beginPath(); ctx.moveTo(x - 128, y - 148); ctx.lineTo(x, y - 232); ctx.lineTo(x + 128, y - 148);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#b95f4b'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.fillStyle = '#b08968'; ctx.fillRect(x + 54, y - 216, 30, 68);   // chimney
+  ctx.fillStyle = '#8a6a4a'; ctx.fillRect(x + 54, y - 216, 30, 10);
+  ctx.fillStyle = '#a06a42';                                   // arched door
+  ctx.beginPath(); ctx.moveTo(x - 26, y); ctx.lineTo(x - 26, y - 66);
+  ctx.arc(x, y - 66, 26, Math.PI, 0); ctx.lineTo(x + 26, y); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#7a4e2e'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.fillStyle = '#ffd166'; circle(x + 12, y - 38, 5);
+  ctx.fillStyle = '#bfe8ff'; circle(x - 58, y - 96, 24);        // round window
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 5;
+  circle(x - 58, y - 96, 24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 82, y - 96); ctx.lineTo(x - 34, y - 96);
+  ctx.moveTo(x - 58, y - 120); ctx.lineTo(x - 58, y - 72); ctx.stroke();
+  ctx.fillStyle = '#8a5a34'; ctx.fillRect(x - 84, y - 70, 52, 14);     // flower box
+  ctx.fillStyle = '#ff8fb3'; circle(x - 72, y - 76, 6); circle(x - 58, y - 78, 6); circle(x - 44, y - 76, 6);
+  ctx.fillStyle = '#d9c8a8'; ell(x, y + 6, 44, 10);             // doorstep
+}
+function drawGarden(time) {
+  const gx = 1020 - camX;
+  ctx.fillStyle = '#a9744f'; ell(gx, GROUND_Y + 8, 150, 26);
+  ctx.fillStyle = '#8f5f3d'; ell(gx, GROUND_Y + 12, 120, 18);
+  for (const s of FLOWER_SPOTS) {
+    const x = s.x - camX, y = GROUND_Y + 4;
+    const sway = Math.sin(time * 2.2 + s.x * 0.05) * 6;
+    ctx.strokeStyle = '#3f8a49'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + sway * 0.5, y - 30, x + sway, y - 52); ctx.stroke();
+    ctx.fillStyle = '#5fbf6f';
+    ell(x - 10 + sway * 0.4, y - 24, 9, 5); ell(x + 10 + sway * 0.4, y - 32, 9, 5);
+    const fx = x + sway, fy = y - 62;
+    const popScale = s.pop > 0 ? 1 + 0.7 * Math.sin((1 - s.pop / 0.8) * Math.PI) : 1;
+    ctx.save(); ctx.translate(fx, fy); ctx.scale(popScale, popScale); ctx.translate(-fx, -fy);
+    if (s.bloomed) {
+      ctx.fillStyle = s.c;
+      for (let p = 0; p < 6; p++) { const a = p * Math.PI / 3 + Math.sin(time * 2 + s.x) * 0.06;
+        circle(fx + Math.cos(a) * 16, fy + Math.sin(a) * 16, 11); }
+      ctx.fillStyle = '#fff3b0'; circle(fx, fy, 12);
+      ctx.fillStyle = '#5a4a3a'; circle(fx - 4.5, fy - 2, 2.2); circle(fx + 4.5, fy - 2, 2.2);
+      ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.arc(fx, fy + 3, 5, 0.4, Math.PI - 0.4); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,150,170,.6)'; circle(fx - 8, fy + 3, 3); circle(fx + 8, fy + 3, 3);
+    } else {
+      ctx.fillStyle = '#7cc984';
+      ctx.beginPath(); ctx.ellipse(fx, fy + 6, 9, 13, 0, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+function drawPaintCorner() {
+  const ex = 1650 - camX; if (ex < -200 || ex > W + 200) return;
+  const gy = GROUND_Y;
+  ctx.fillStyle = '#e8dff5'; ell(ex, gy + 8, 110, 20);          // drop cloth
+  ctx.strokeStyle = '#a06a42'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(ex - 38, gy); ctx.lineTo(ex, gy - 185); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ex + 38, gy); ctx.lineTo(ex, gy - 185); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ex, gy - 185); ctx.lineTo(ex, gy - 40); ctx.stroke();
+  const cw = 110, chh = 86, cx0 = ex - cw / 2, cy0 = gy - 280;  // canvas + thumbnail
+  ctx.fillStyle = '#fffdf4'; ctx.fillRect(cx0, cy0, cw, chh);
+  ctx.save(); ctx.beginPath(); ctx.rect(cx0, cy0, cw, chh); ctx.clip();
+  for (const d of paint.dabs.slice(-8)) {
+    ctx.fillStyle = d.c; ctx.globalAlpha = 0.9;
+    circle(cx0 + cw / 2 + (d.x - 480) * 0.12, cy0 + chh / 2 + (d.y - 275) * 0.12, Math.max(3, d.r * 0.16));
+  }
+  ctx.globalAlpha = 1; ctx.restore();
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 5; ctx.strokeRect(cx0, cy0, cw, chh);
+  PAINT_COLORS.forEach((c, i) => { ctx.fillStyle = c; circle(ex - 72 + i * 26, gy - 10, 10); });
+  ctx.fillStyle = '#bfe8ff'; rr(ex + 52, gy - 44, 30, 44, 6); ctx.fill();   // brush jar
+  ctx.strokeStyle = '#7aa8cc'; ctx.lineWidth = 3; rr(ex + 52, gy - 44, 30, 44, 6); ctx.stroke();
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(ex + 62, gy - 44); ctx.lineTo(ex + 70, gy - 70); ctx.stroke();
+}
+function drawWordStones(time) {
+  const w = currentWord();
+  for (let i = 0; i < 3; i++) {
+    const x = STONE_XS[i] - camX; if (x < -80 || x > W + 80) continue;
+    const touched = stoneTouched[i], pop = touched ? 1 + Math.sin(time * 6) * 0.04 : 1;
+    ctx.save(); ctx.translate(x, GROUND_Y - 62); ctx.scale(pop, pop);
+    if (touched) { ctx.shadowColor = '#ffd93d'; ctx.shadowBlur = 26; }
+    ctx.fillStyle = '#9aa7b8'; rr(-37, -62, 74, 124, 22); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#6e7b8d'; ctx.lineWidth = 5; rr(-37, -62, 74, 124, 22); ctx.stroke();
+    ctx.fillStyle = '#6fae6f'; ell(-14, 52, 20, 10); ell(16, 54, 16, 8);   // moss
+    outlineText(w.word[i], 0, -6, 'bold 58px "Comic Sans MS",sans-serif',
+      touched ? '#fff3b0' : '#ffffff', 'rgba(70,85,105,.8)', 7);
+    ctx.restore();
+  }
+}
+function drawDragonHill() {
+  ctx.fillStyle = '#8fd694'; ell(2750 - camX, GROUND_Y + 16, 220, 44);
+  ctx.fillStyle = '#7cc984'; ell(2750 - camX, GROUND_Y + 24, 170, 30);
+}
+function drawDragon(time) {
+  const x = 2750 - camX; if (x < -160 || x > W + 160) return;
+  const hop = dragonHop > 0 ? Math.sin((0.9 - dragonHop) / 0.9 * Math.PI) * -52 : 0;
+  const breathe = 1 + Math.sin(dragonT * 2.2) * 0.02;
+  const blinking = dragonBlink < 0.15;
+  ctx.save(); ctx.translate(x, GROUND_Y + hop); ctx.scale(breathe, breathe);
+  ctx.fillStyle = 'rgba(0,0,0,.15)'; ell(0, -hop + 6, 56, 12);
+  ctx.fillStyle = '#7ed07e';                                       // tail
+  ctx.beginPath(); ctx.moveTo(-46, -34);
+  ctx.quadraticCurveTo(-96, -44 + Math.sin(time * 3) * 8, -108, -12);
+  ctx.quadraticCurveTo(-82, -20, -46, -16); ctx.closePath(); ctx.fill();
+  const flap = Math.sin(time * 5) * 0.3;                          // wing
+  ctx.fillStyle = '#a5e3a5';
+  ctx.save(); ctx.translate(-6, -70); ctx.rotate(-0.5 + flap);
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-52, -38); ctx.lineTo(-10, -50); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#7ed07e'; ell(0, -38, 56, 40);                 // body
+  ctx.fillStyle = '#d8f3d8'; ell(12, -26, 32, 24);                // belly
+  ctx.fillStyle = '#6ab86a'; ell(-24, -6, 14, 9); ell(24, -6, 14, 9);
+  ctx.fillStyle = '#7ed07e'; circle(48, -78, 26);                 // head
+  ctx.fillStyle = '#d8f3d8'; ctx.beginPath(); ctx.ellipse(66, -68, 15, 11, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#5a8a5a'; circle(72, -70, 3);
+  ctx.fillStyle = '#ffd166';                                       // horns
+  ctx.beginPath(); ctx.moveTo(36, -100); ctx.lineTo(30, -116); ctx.lineTo(44, -102); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(52, -102); ctx.lineTo(50, -118); ctx.lineTo(60, -102); ctx.closePath(); ctx.fill();
+  if (blinking) {
+    ctx.strokeStyle = '#2c4a2c'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(50, -84); ctx.lineTo(60, -84); ctx.stroke();
+  } else { ctx.fillStyle = '#fff'; circle(55, -84, 7); ctx.fillStyle = '#223'; circle(57, -84, 3.4); }
+  ctx.strokeStyle = '#3d7a3d'; ctx.lineWidth = 3;                 // smile
+  ctx.beginPath(); ctx.arc(64, -64, 9, 0.3, Math.PI - 0.6); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,150,170,.55)'; circle(42, -70, 5);    // blush
+  ctx.restore();
+}
+function drawMarble(time) {                                // Mabel's lost marble, glowing
+  if (quest !== 'seeking') return;
+  const x = marbleX - camX; if (x < -40 || x > W + 40) return;
+  const bob = Math.sin(time * 4) * 6;
+  ctx.save();
+  ctx.shadowColor = '#6fb7ff'; ctx.shadowBlur = 14 + Math.sin(time * 5) * 5;
+  ctx.fillStyle = '#6fb7ff'; circle(x, GROUND_Y - 24 + bob, 13);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,255,255,.85)'; circle(x - 4, GROUND_Y - 29 + bob, 4.5);
+  ctx.restore();
+  if (Math.random() < 0.1)
+    particles.push({ x: marbleX + (Math.random() * 30 - 15), y: GROUND_Y - 24 + (Math.random() * 20 - 10),
+      vx: 0, vy: -24, life: 0.8, t: 0, c: '#bfe3ff', r: 3 });
+}
+function drawMabel(time) {                                 // Mabel the mouse, in the cottage
+  const x = 700, y = GROUND_Y, wave = Math.sin(time * 6) * 0.25;
+  ctx.fillStyle = 'rgba(0,0,0,.12)'; ell(x, y + 5, 24, 7);
+  ctx.fillStyle = '#b8b0c8';
+  ctx.beginPath(); ctx.ellipse(x, y - 30, 24, 28, 0, 0, 7); ctx.fill();   // body
+  circle(x - 16, y - 56, 11); circle(x + 16, y - 56, 11);                 // ears
+  ctx.fillStyle = '#ffb3c8'; circle(x - 16, y - 56, 5.5); circle(x + 16, y - 56, 5.5);
+  ctx.fillStyle = '#b8b0c8'; circle(x, y - 44, 19);                       // head
+  ctx.fillStyle = '#ffb3c8';
+  ctx.beginPath(); ctx.ellipse(x, y - 38, 5, 4, 0, 0, 7); ctx.fill();     // nose
+  ctx.fillStyle = '#2c2c34'; circle(x - 7, y - 48, 2.8); circle(x + 7, y - 48, 2.8);
+  ctx.fillStyle = '#fff'; circle(x - 6, y - 49, 1); circle(x + 8, y - 49, 1);
+  ctx.strokeStyle = '#7a6a8a'; ctx.lineWidth = 2;                         // whiskers
+  ctx.beginPath();
+  ctx.moveTo(x - 22, y - 40); ctx.lineTo(x - 34, y - 42);
+  ctx.moveTo(x - 22, y - 36); ctx.lineTo(x - 34, y - 34);
+  ctx.moveTo(x + 22, y - 40); ctx.lineTo(x + 34, y - 42);
+  ctx.moveTo(x + 22, y - 36); ctx.lineTo(x + 34, y - 34);
+  ctx.stroke();
+  ctx.strokeStyle = '#b8b0c8'; ctx.lineWidth = 5; ctx.lineCap = 'round';   // waving arm
+  ctx.save(); ctx.translate(x + 18, y - 34); ctx.rotate(-0.6 + wave);
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -20); ctx.stroke(); ctx.restore();
+  ctx.strokeStyle = '#b8b0c8'; ctx.lineWidth = 4;                         // tail
+  ctx.beginPath(); ctx.moveTo(x - 22, y - 12);
+  ctx.quadraticCurveTo(x - 44, y - 8 + Math.sin(time * 3) * 4, x - 52, y - 26); ctx.stroke();
+  ctx.fillStyle = '#ffb3c8'; circle(x - 52, y - 27, 4);
+  if (quest === 'seeking') {                                             // speech bubble
+    ctx.fillStyle = 'rgba(255,255,255,.95)'; rr(x - 90, y - 190, 180, 52, 14); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 12, y - 138); ctx.lineTo(x + 12, y - 138);
+    ctx.lineTo(x, y - 118); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#5a4a7a'; ctx.font = 'bold 19px "Comic Sans MS",sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Find my marble!', x, y - 164);
+  }
+}
+
+/* ================= CHARACTERS ================= */
+function drawFace() {
+  ctx.fillStyle = '#2c2c34'; circle(-6, -56, 2.6); circle(6, -56, 2.6);
+  ctx.strokeStyle = '#a05a3a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, -51, 6, 0.35, Math.PI - 0.35); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,140,160,.55)'; circle(-10, -50, 3.4); circle(10, -50, 3.4);
+}
+function drawFairyBody(c, time) {
+  const wing = Math.sin(time * 10) * 0.22;
+  ctx.fillStyle = 'rgba(255,255,255,.88)';
+  ctx.save(); ctx.rotate(-0.45 + wing);
+  ctx.beginPath(); ctx.ellipse(-17, -40, 13, 24, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(-17, -32); ctx.lineTo(-17, -60); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-17, -38); ctx.lineTo(-27, -52); ctx.stroke();
+  ctx.restore();
+  ctx.save(); ctx.rotate(-0.95 + wing);
+  ctx.beginPath(); ctx.ellipse(-24, -26, 10, 17, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(-24, -20); ctx.lineTo(-24, -40); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = '#ffe14d'; circle(-22, -48, 2.2); circle(-14, -34, 1.8); circle(-28, -30, 1.6);
+  ctx.fillStyle = c;                                              // scalloped dress
+  ctx.beginPath(); ctx.moveTo(-9, -38); ctx.lineTo(9, -38); ctx.lineTo(19, -2); ctx.lineTo(-19, -2);
+  ctx.closePath(); ctx.fill();
+  for (let i = 0; i < 4; i++) circle(-14.25 + i * 9.5, -2, 5.2);
+  ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(-9.5, -39, 19, 8);   // waist sash
+  ctx.fillStyle = '#ffe14d'; star(0, -35, 4.5, 2);
+  ctx.fillStyle = 'rgba(255,255,255,.85)'; star(0, -24, 7, 3.2);
+  ctx.strokeStyle = '#ffcf9e'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-8, -32); ctx.lineTo(-19, -20); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(8, -32); ctx.lineTo(19, -20); ctx.stroke();
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 3;                  // wand
+  ctx.beginPath(); ctx.moveTo(19, -20); ctx.lineTo(30, -34); ctx.stroke();
+  ctx.save(); ctx.shadowColor = '#ffe14d'; ctx.shadowBlur = 12;
+  ctx.fillStyle = '#ffe14d'; star(30, -36, 6, 2.6); ctx.restore();
+  ctx.fillStyle = '#ffd9b8'; circle(0, -56, 17);                  // head
+  ctx.fillStyle = '#8a5a34';                                      // hair
+  ctx.beginPath(); ctx.arc(0, -60, 17, Math.PI * 0.95, Math.PI * 2.05); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-15, -52, 6, 12, 0.3, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(15, -52, 6, 12, -0.3, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 3;     // hair shine
+  ctx.beginPath(); ctx.arc(0, -60, 11.5, Math.PI * 1.15, Math.PI * 1.55); ctx.stroke();
+  softLight(0, -56, 17, .28);
+  ctx.fillStyle = c;                                              // flower in hair
+  for (let p = 0; p < 5; p++) { const a = p * Math.PI * 2 / 5 - 0.5;
+    circle(14 + Math.cos(a) * 6, -72 + Math.sin(a) * 6, 4); }
+  ctx.fillStyle = '#fff'; circle(14, -72, 3.4);
+  drawFace();
+}
+function drawBearBody(c, time) {
+  const breathe = 1 + Math.sin(time * 2.5) * 0.015;
+  ctx.save(); ctx.scale(breathe, breathe);
+  ctx.fillStyle = c; circle(-30, -14, 8);                         // tail
+  circle(-13, -72, 10); circle(13, -72, 10);                      // ears
+  ctx.fillStyle = '#ffe9c9'; circle(-13, -72, 5); circle(13, -72, 5);
+  ctx.fillStyle = c;                                              // head tuft
+  for (let t = -1; t <= 1; t++) { ctx.beginPath();
+    ctx.moveTo(t * 8 - 4.5, -79); ctx.lineTo(t * 8 + 4.5, -79); ctx.lineTo(t * 8, -88);
+    ctx.closePath(); ctx.fill(); }
+  ctx.beginPath(); ctx.ellipse(0, -32, 26, 32, 0, 0, 7); ctx.fill();   // body
+  ctx.fillStyle = '#ffe9c9';
+  ctx.beginPath(); ctx.ellipse(0, -26, 15, 20, 0, 0, 7); ctx.fill();   // belly
+  softLight(0, -32, 26, .22);
+  ctx.fillStyle = c;
+  ctx.beginPath(); ctx.ellipse(-24, -32, 8, 14, 0.4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(24, -32, 8, 14, -0.4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-12, -4, 9, 7, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(12, -4, 9, 7, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffe9c9'; ell(-12, -4, 4, 3); ell(12, -4, 4, 3);   // toe beans
+  ctx.fillStyle = c;
+  circle(0, -62, 20);                                             // head
+  softLight(0, -62, 20, .22);
+  ctx.fillStyle = '#ffe9c9';
+  ctx.beginPath(); ctx.ellipse(0, -56, 11, 8, 0, 0, 7); ctx.fill();    // snout
+  ctx.fillStyle = '#5a3a2a';
+  ctx.beginPath(); ctx.ellipse(0, -59, 5, 3.6, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#5a3a2a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, -54, 6, 0.5, Math.PI - 0.5); ctx.stroke();
+  ctx.fillStyle = '#2c2c34'; circle(-8, -66, 2.8); circle(8, -66, 2.8);
+  ctx.fillStyle = '#fff'; circle(-7, -67, 1); circle(9, -67, 1);
+  ctx.fillStyle = 'rgba(255,140,160,.5)'; circle(-14, -58, 3.6); circle(14, -58, 3.6);
+  ctx.restore();
+}
+function drawGirlBody(c) {
+  ctx.fillStyle = '#6e4530';
+  ctx.beginPath(); ctx.ellipse(0, -54, 20, 22, 0, 0, 7); ctx.fill();   // hair back
+  ctx.fillStyle = c;                                              // dotted dress
+  ctx.beginPath(); ctx.moveTo(-9, -38); ctx.lineTo(9, -38); ctx.lineTo(20, -2); ctx.lineTo(-20, -2);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.7)';
+  circle(-8, -24, 3); circle(6, -18, 3); circle(0, -30, 3); circle(10, -30, 2.4); circle(-3, -12, 2.4);
+  ctx.fillStyle = '#fff';                                         // peter-pan collar
+  ctx.beginPath(); ctx.moveTo(-9, -38); ctx.lineTo(-1, -29); ctx.lineTo(-3, -40); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(9, -38); ctx.lineTo(1, -29); ctx.lineTo(3, -40); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = c;                                              // sleeve puffs
+  circle(-11, -33, 7); circle(11, -33, 7);
+  ctx.strokeStyle = '#ffcf9e'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-8, -32); ctx.lineTo(-19, -20); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(8, -32); ctx.lineTo(19, -20); ctx.stroke();
+  ctx.fillStyle = '#7a4e2e'; ell(-9, -2, 8, 5); ell(9, -2, 8, 5);   // shoes
+  ctx.fillStyle = '#ffe14d'; ctx.fillRect(-12, -4, 6, 4); ctx.fillRect(6, -4, 6, 4);
+  ctx.fillStyle = '#ffd9b8'; circle(0, -56, 16);                  // head
+  ctx.fillStyle = '#6e4530';
+  ctx.beginPath(); ctx.arc(0, -58, 16, Math.PI * 0.92, Math.PI * 2.08); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-16, -52, 6, 13, 0.25, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(16, -52, 6, 13, -0.25, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 3;    // hair shine
+  ctx.beginPath(); ctx.arc(0, -58, 11, Math.PI * 1.15, Math.PI * 1.55); ctx.stroke();
+  softLight(0, -56, 16, .28);
+  ctx.fillStyle = c;                                              // bow
+  ctx.save(); ctx.translate(18, -72); ctx.rotate(0.4);
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-11, -7); ctx.lineTo(-11, 7); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(11, -7); ctx.lineTo(11, 7); ctx.closePath(); ctx.fill();
+  circle(0, 0, 3.6); ctx.restore();
+  drawFace();
+}
+function drawCharacter(id, ci, x, y, s, time, face) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s * (face || 1), s);
+  const c = COLORS[ci].c;
+  drawOutfitBack(id, look, time);              // capes & wings sit behind the body
+  if (id === 'fairy') drawFairyBody(c, time);
+  else if (id === 'bear') drawBearBody(c, time);
+  else drawGirlBody(c);
+  drawOutfitFront(id, look, time);             // hats, dresses, shoes, extras
+  ctx.restore();
+}
+/* ---- Wearable geometry: one anchor table per character so every piece RESTS ON the
+   body (hat brim on the head, patterns inside the dress, shoes over the real feet).
+   All coordinates are in character-local space (origin = between the feet, up = -y):
+     brimY/brimW  where a head-hat's brim sits and how wide it is
+     headY/headR  head circle (drawn by the body fns)
+     eyeY         eye line (glasses)
+     neckY        neck/shoulder line (scarf, necklace)
+     dress        [topY, halfWidth] of the skirt, or absent (bear) — then body is used
+     body         {cx, cy, rx, ry} belly/dress-core box (sash, aprons, pendants)
+     feet         [cx, y, w, h] boxes that exactly cover each foot
+     hand         paw/hand point (held items) */
+const CHAR_A = {
+  fairy: { brimY:-74, brimW:17, headY:-56, headR:17, eyeY:-56, neckY:-40,
+           dress:[[-38, 9], [-2, 19]], body:{ cx:0, cy:-20, rx:16, ry:17 },
+           feet:[[-8, -5, 15, 8], [8, -5, 15, 8]], hand:[19, -20] },
+  bear:  { brimY:-84, brimW:18, headY:-62, headR:20, eyeY:-66, neckY:-46,
+           body:{ cx:0, cy:-26, rx:15, ry:20 },
+           feet:[[-12, -11, 19, 14], [12, -11, 19, 14]], hand:[24, -32] },
+  girl:  { brimY:-73, brimW:16, headY:-56, headR:16, eyeY:-56, neckY:-40,
+           dress:[[-38, 9], [-2, 20]], body:{ cx:0, cy:-18, rx:16, ry:17 },
+           feet:[[-9, -8, 17, 11], [9, -8, 17, 11]], hand:[19, -20] },
+};
+// half-width of the skirt (or belly) at a given height — keeps patterns inside the silhouette
+function bodyHW(a, y) {
+  if (a.dress) {
+    const t = a.dress[0], b = a.dress[1];
+    return t[1] + (b[1] - t[1]) * (y - t[0]) / (b[0] - t[0]);
+  }
+  return a.body.rx * Math.sqrt(Math.max(0, 1 - Math.pow((y - a.body.cy) / a.body.ry, 2)));
+}
+/* Back layer: drawn before the body so capes and wings flow from behind. */
+function drawOutfitBack(id, piece, time) {
+  if (!piece || piece === 'me') return;
+  const a = CHAR_A[id];
+  if (piece === 'sparkle_cape') {
+    const topY = a.dress ? -38 : a.body.cy - a.body.ry, botY = -2;
+    const hwTop = bodyHW(a, topY) + 3, hwBot = bodyHW(a, topY + 14) + 11;
+    const flap = Math.sin(time * 3) * 2;
+    ctx.fillStyle = '#7c6cf0';
+    ctx.beginPath();
+    ctx.moveTo(-hwTop, topY);
+    ctx.quadraticCurveTo(-hwBot - 5 - flap, (topY + botY) / 2, -hwBot, botY + 4);
+    ctx.quadraticCurveTo(0, botY + 11, hwBot, botY + 4);
+    ctx.quadraticCurveTo(hwBot + 5 + flap, (topY + botY) / 2, hwTop, topY);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#6a5ad0';                                      // inner fold
+    ctx.beginPath(); ctx.moveTo(-3, topY + 4); ctx.lineTo(-hwBot * 0.7, botY + 5);
+    ctx.lineTo(-hwBot * 0.3, botY + 6); ctx.lineTo(-1, topY + 6); ctx.closePath(); ctx.fill();
+    for (const [sx, sy] of [[-13, -26], [11, -20], [-6, -10], [15, -30], [4, -34]]) {
+      ctx.fillStyle = '#ffe14d'; star(sx, sy, 3.4, 1.5);
+    }
+  } else if (piece === 'butterfly_wings') {
+    const wy = a.body.cy - 8, flutter = Math.sin(time * 8) * 0.12;
+    for (const s of [-1, 1]) {
+      ctx.save(); ctx.translate(s * 9, wy); ctx.scale(s, 1); ctx.rotate(flutter);
+      ctx.fillStyle = 'rgba(255,158,198,.92)';  ell(9, -13, 13, 19);
+      ctx.fillStyle = 'rgba(255,197,110,.92)';  ell(8, 10, 11, 14);
+      ctx.fillStyle = 'rgba(255,255,255,.8)';   circle(13, -17, 3.2); circle(11, 9, 2.6);
+      ctx.restore();
+    }
+  }
+}
+/* Front layer: everything worn on top of the body, anchored per character. */
+function drawOutfitFront(id, piece, time) {
+  if (!piece || piece === 'me') return;
+  const a = CHAR_A[id], hw = a.brimW;
+  if (piece === 'hat') {                                             // Twinkle Hat
+    ctx.save(); ctx.translate(0, a.brimY); ctx.rotate(0.12);
+    ctx.fillStyle = '#7c6cf0';
+    ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw, 0); ctx.lineTo(5, -27); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#6a5ad0';
+    ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(-hw * 0.35, 0); ctx.lineTo(9, -27); ctx.lineTo(5, -27); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#5a4a8a'; ell(0, 1, hw * 1.15, 5);
+    ctx.fillStyle = '#ffe14d'; star(3, -13, 4, 1.8); star(-6, -6, 2.6, 1.2);
+    ctx.fillStyle = '#fff'; circle(5, -27, 3.6);
+    ctx.restore();
+  } else if (piece === 'dress') {                                    // Flower Dress pattern
+    const spots = a.dress ? [[-5, -30], [5, -23], [-1, -13]]
+                          : [[-7, -32], [6, -24], [-2, -14]];
+    for (const [fx2, fy] of spots) {
+      ctx.fillStyle = '#fff';
+      for (let p = 0; p < 5; p++) circle(fx2 + Math.cos(p * 1.257) * 4.4, fy + Math.sin(p * 1.257) * 4.4, 2.6);
+      ctx.fillStyle = '#ffd166'; circle(fx2, fy, 2.6);
+    }
+  } else if (piece === 'shoes') {                                    // Sunny Shoes
+    for (const [fx, fy, fw, fh] of a.feet) {
+      ctx.fillStyle = '#ffcf4d'; rr(fx - fw / 2, fy, fw, fh, 5); ctx.fill();
+      ctx.fillStyle = '#e0a92e'; rr(fx - fw / 2, fy + fh - 5, fw, 5, 3); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; circle(fx - fw * 0.22, fy + fh * 0.45, 2.5);
+    }
+  } else if (piece === 'daisy_crown') {                              // pick a flower
+    ctx.fillStyle = '#fff';
+    for (let i = -2; i <= 2; i++) {
+      const fx2 = i * a.headR * 0.55;
+      const fy = a.headY - Math.sqrt(Math.max(1, a.headR * a.headR - fx2 * fx2)) - 4;
+      for (let p = 0; p < 5; p++) circle(fx2 + Math.cos(p * 1.257) * 4.2, fy + Math.sin(p * 1.257) * 4.2, 2.5);
+      ctx.fillStyle = '#ffd93d'; circle(fx2, fy, 2.4); ctx.fillStyle = '#fff';
+    }
+  } else if (piece === 'sun_hat') {                                  // every flower picked
+    ctx.fillStyle = '#f5d98a'; ell(0, a.brimY - 2, hw + 11, 6.5);
+    ctx.fillStyle = '#e8c76a'; ell(0, a.brimY - 3.5, hw + 11, 5);
+    ctx.fillStyle = '#f5d98a';
+    ctx.beginPath(); ctx.ellipse(0, a.brimY - 4, hw * 0.72, 15, 0, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#ff6b9d'; rr(-hw * 0.72, a.brimY - 9, hw * 1.44, 5, 2); ctx.fill();
+    ctx.fillStyle = '#fff3b0';
+    for (let p = 0; p < 5; p++) circle(hw * 0.45 + Math.cos(p * 1.257) * 4, a.brimY - 7 + Math.sin(p * 1.257) * 4, 2.4);
+    ctx.fillStyle = '#ffd93d'; circle(hw * 0.45, a.brimY - 7, 2.2);
+  } else if (piece === 'bee_antennae') {                             // fairy garden
+    ctx.strokeStyle = '#4a3a2a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    for (const s of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(s * 7, a.brimY + 3);
+      ctx.quadraticCurveTo(s * 14, a.brimY - 14, s * 18, a.brimY - 22); ctx.stroke();
+      ctx.fillStyle = '#4a3a2a'; circle(s * 18, a.brimY - 24, 5);
+      ctx.fillStyle = '#ffd93d'; circle(s * 18, a.brimY - 24, 2.2);
+    }
+  } else if (piece === 'gold_crown') {                               // I-spy champion
+    const cy2 = a.brimY - 6;
+    ctx.fillStyle = '#ffc93d'; rr(-hw, cy2, hw * 2, 11, 3); ctx.fill();
+    for (const px of [-hw * 0.6, 0, hw * 0.6]) {
+      ctx.beginPath(); ctx.moveTo(px - 5, cy2 + 1); ctx.lineTo(px + 5, cy2 + 1);
+      ctx.lineTo(px, cy2 - 12); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#ff5b5b'; circle(-hw * 0.5, cy2 + 5, 2.4);
+    ctx.fillStyle = '#4db8ff'; circle(0, cy2 + 5, 2.4);
+    ctx.fillStyle = '#5fd6a4'; circle(hw * 0.5, cy2 + 5, 2.4);
+  } else if (piece === 'big_red_bow') {                              // brush a doll's hair
+    ctx.save(); ctx.translate(-(a.headR + 1), a.headY - a.headR * 0.55); ctx.rotate(-0.35);
+    ctx.fillStyle = '#ff5b5b';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-12, -8); ctx.lineTo(-12, 8); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(12, -8); ctx.lineTo(12, 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#e04545'; circle(0, 0, 4);
+    ctx.restore();
+  } else if (piece === 'party_hat') {                                // tea party
+    ctx.save(); ctx.translate(3, a.brimY); ctx.rotate(0.2);
+    ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(14, 0); ctx.lineTo(0, -32); ctx.closePath();
+    ctx.fillStyle = '#ff8fb3'; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = 'rgba(255,255,255,.92)';
+    ctx.fillRect(-16, -13, 32, 5); ctx.fillRect(-16, -25, 32, 4);
+    ctx.restore();
+    ctx.fillStyle = '#ffd93d'; circle(0, -33, 4.5);
+    ctx.restore();
+  } else if (piece === 'night_cap') {                                // tuck a doll in
+    ctx.save(); ctx.translate(0, a.brimY); ctx.rotate(0.2);
+    ctx.fillStyle = '#a58ae0'; rr(-hw, -5, hw * 2, 7, 3.5); ctx.fill();
+    ctx.fillStyle = '#c9a8ff';
+    ctx.beginPath(); ctx.moveTo(-hw * 0.9, -4);
+    ctx.quadraticCurveTo(hw * 0.5, -34, hw * 1.5, -26);
+    ctx.quadraticCurveTo(hw * 0.6, -17, hw * 0.9, -4);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffe14d'; star(hw * 0.4, -17, 3.4, 1.5); star(hw * 0.95, -23, 2.4, 1.1);
+    ctx.fillStyle = '#fff'; circle(hw * 1.5, -26, 4.5);
+    ctx.restore();
+  } else if (piece === 'paint_apron') {                              // first painting
+    const topY = a.dress ? -36 : a.body.cy - a.body.ry + 6;
+    const waistY = a.dress ? -24 : a.body.cy - 4;
+    const hemY = a.dress ? -5 : -7;
+    ctx.fillStyle = '#4db8ff';
+    ctx.beginPath(); ctx.moveTo(-9, topY); ctx.lineTo(9, topY); ctx.lineTo(9, waistY); ctx.lineTo(-9, waistY); ctx.closePath(); ctx.fill();
+    const w1 = bodyHW(a, waistY) - 1.5, w2 = bodyHW(a, hemY) - 1.5;
+    ctx.beginPath(); ctx.moveTo(-w1, waistY); ctx.lineTo(w1, waistY);
+    ctx.lineTo(w2, hemY); ctx.lineTo(-w2, hemY); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#2f8dc0'; rr(-w1, waistY - 3, w1 * 2, 6, 3); ctx.fill();   // waist tie
+    const blobs = [[-4, waistY + 6, '#ff5b5b'], [5, waistY + 11, '#ffd93d'], [0, waistY + 17, '#ffffff']];
+    for (const [bx, by, bc] of blobs) { ctx.fillStyle = bc; circle(bx, by, 3); }
+  } else if (piece === 'star_sash') {                                // find the marble
+    const y0 = a.dress ? -36 : a.body.cy - a.body.ry + 4;
+    const y1 = a.dress ? -8 : a.body.cy + a.body.ry - 4;
+    const x0 = -bodyHW(a, y0) * 0.55, x1 = bodyHW(a, y1) * 0.55;
+    ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x0 + 3, y0); ctx.lineTo(x1 + 3, y1); ctx.stroke();
+    for (const t of [0.28, 0.58, 0.86]) {
+      ctx.fillStyle = '#fff7d0';
+      star(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 3.6, 1.6);
+    }
+  } else if (piece === 'rainbow_scarf') {                            // say hello to Bramble
+    const ny = a.neckY;
+    const cols = ['#ff6b6b', '#ffd93d', '#4db8ff'];
+    ctx.fillStyle = '#ff6b6b'; rr(-11, ny, 22, 9, 4); ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = cols[i]; fillRectSafe(-11 + i * 7.4, ny + 1, 7.2, 7);
+    }
+    ctx.fillStyle = '#ff6b6b'; rr(3, ny + 5, 8, 26, 3); ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = cols[i]; fillRectSafe(3, ny + 5 + i * 8.7, 8, 8.7);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.35)'; rr(-11, ny, 22, 3, 2); ctx.fill();
+  } else if (piece === 'polka_pinafore') {                           // change a doll's dress
+    ctx.fillStyle = '#6fb7ff';
+    if (a.dress) {
+      const t = a.dress[0], b = a.dress[1];
+      ctx.fillRect(-8.5, t[0] - 2, 5, 10); ctx.fillRect(3.5, t[0] - 2, 5, 10);   // straps
+      const ty = Math.max(t[0] + 6, -30), w1 = bodyHW(a, ty) - 3, w2 = bodyHW(a, b[0] + 1) - 3;
+      ctx.beginPath(); ctx.moveTo(-w1, ty); ctx.lineTo(w1, ty);
+      ctx.lineTo(w2, b[0] - 1); ctx.lineTo(-w2, b[0] - 1); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff';
+      for (let yy = ty + 5; yy < b[0] - 4; yy += 10) {
+        const w = bodyHW(a, yy) - 5;
+        circle(-w * 0.55, yy, 2.6); circle(w * 0.55, yy, 2.6);
+      }
+    } else {
+      ctx.fillRect(-9, a.body.cy - a.body.ry - 4, 5, 14); ctx.fillRect(4, a.body.cy - a.body.ry - 4, 5, 14);
+      const ty = a.body.cy - 6;
+      ctx.beginPath(); ctx.moveTo(-bodyHW(a, ty), ty); ctx.lineTo(bodyHW(a, ty), ty);
+      ctx.lineTo(bodyHW(a, ty + 16) + 1, ty + 16); ctx.lineTo(-bodyHW(a, ty + 16) - 1, ty + 16);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff';
+      for (const [dx, dy] of [[-6, ty + 5], [5, ty + 5], [0, ty + 12]]) circle(dx, dy, 2.6);
+    }
+  } else if (piece === 'rain_boots') {                               // splash at the pond
+    for (const [fx, fy, fw, fh] of a.feet) {
+      ctx.fillStyle = '#3aa8e0'; rr(fx - fw / 2, fy, fw, fh, 5); ctx.fill();
+      ctx.fillStyle = '#2f8dc0'; rr(fx - fw / 2, fy + fh - 5, fw, 5, 3); ctx.fill();
+      ctx.fillStyle = '#eaf6ff'; rr(fx - fw / 2 + 1, fy, fw - 2, 4, 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.6)'; circle(fx - fw * 0.22, fy + fh * 0.5, 2.6);
+    }
+  } else if (piece === 'ballet_slippers') {                          // dance with a doll
+    for (const [fx, fy, fw, fh] of a.feet) {
+      ctx.fillStyle = '#ff9ec6'; rr(fx - fw / 2, fy + 2, fw, Math.max(6, fh - 2), 6); ctx.fill();
+      ctx.strokeStyle = '#ff7ab3'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(fx - 4, fy + 3); ctx.lineTo(fx + 4, fy - 7);
+      ctx.moveTo(fx + 4, fy + 3); ctx.lineTo(fx - 4, fy - 7); ctx.stroke();
+      ctx.fillStyle = '#ff7ab3'; circle(fx, fy + fh - 4, 2.6);
+    }
+  } else if (piece === 'sparkle_trainers') {                         // build a block tower
+    for (const [fx, fy, fw, fh] of a.feet) {
+      ctx.fillStyle = '#ffffff'; rr(fx - fw / 2, fy + 1, fw, Math.max(6, fh - 1), 5); ctx.fill();
+      ctx.strokeStyle = '#c9c9d4'; ctx.lineWidth = 2; rr(fx - fw / 2, fy + 1, fw, Math.max(6, fh - 1), 5); ctx.stroke();
+      ctx.fillStyle = '#4db8ff'; rr(fx - fw / 2, fy + fh - 5, fw, 5, 3); ctx.fill();
+      ctx.fillStyle = '#ffd166'; star(fx, fy + fh * 0.4, 3.6, 1.6);
+    }
+  } else if (piece === 'rainbow_wellies') {                          // jump in a puddle
+    const cols = ['#ff6b6b', '#ffd93d', '#4db8ff'];
+    for (const [fx, fy, fw, fh] of a.feet) {
+      const top = fy - 8, hgt = fh + 8;
+      ctx.fillStyle = '#5fd6a4'; rr(fx - fw / 2, top, fw, hgt, 5); ctx.fill();
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = cols[i]; fillRectSafe(fx - fw / 2 + 1, top + 1 + i * 5, fw - 2, 4.5);
+      }
+      ctx.fillStyle = '#3fb58e'; rr(fx - fw / 2, top + hgt - 5, fw, 5, 3); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.5)'; circle(fx - fw * 0.24, top + hgt * 0.6, 2.4);
+    }
+  } else if (piece === 'round_glasses') {                            // find something hiding
+    const ey = a.eyeY, gx = a.headR * 0.48;
+    ctx.fillStyle = 'rgba(255,255,255,.32)'; circle(gx, ey, 6.4); circle(-gx, ey, 6.4);
+    ctx.strokeStyle = '#4a3a2a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(gx, ey, 7, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-gx, ey, 7, 0, 7); ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-gx + 7, ey); ctx.lineTo(gx - 7, ey); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-gx - 7, ey); ctx.lineTo(-a.headR - 2, ey - 4);
+    ctx.moveTo(gx + 7, ey); ctx.lineTo(a.headR + 2, ey - 4); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(gx - 4, ey + 3); ctx.lineTo(gx + 1, ey - 4); ctx.stroke();
+  } else if (piece === 'flower_basket') {                            // flowers in the vase
+    const hx = a.hand[0] + 7, hy = a.hand[1] + 12;
+    ctx.save(); ctx.translate(hx, hy);
+    ctx.strokeStyle = '#a06a42'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, -5, 9, Math.PI, 0); ctx.stroke();
+    ctx.fillStyle = '#c58a5a';
+    ctx.beginPath(); ctx.moveTo(-11, -4); ctx.lineTo(11, -4); ctx.lineTo(8, 9); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#a06a42'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-10, 1); ctx.lineTo(10, 1); ctx.moveTo(-9, 5); ctx.lineTo(9, 5); ctx.stroke();
+    const fc = ['#ff6b9d', '#ffd166', '#b78fff'];
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = fc[i];
+      for (let p = 0; p < 5; p++) circle(-5 + i * 5 + Math.cos(p * 1.257) * 3.4, -8 - (i === 1 ? 3 : 0) + Math.sin(p * 1.257) * 3.4, 2.2);
+      ctx.fillStyle = '#fff'; circle(-5 + i * 5, -8 - (i === 1 ? 3 : 0), 1.8);
+    }
+    ctx.restore();
+  } else if (piece === 'marble_necklace') {                          // Mabel says thank you
+    const ny = a.neckY + 4;
+    ctx.strokeStyle = '#b8c8d8'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-9, ny); ctx.quadraticCurveTo(0, ny + 10, 9, ny); ctx.stroke();
+    ctx.save(); ctx.shadowColor = '#6fb7ff'; ctx.shadowBlur = 8;
+    ctx.fillStyle = '#6fb7ff'; circle(0, ny + 10, 4.5); ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; circle(-1.5, ny + 8.5, 1.7);
+  }
+}
+function fillRectSafe(x, y, w, h) { ctx.fillRect(x, y, w, h); }
+function drawPlayer(time) {
+  const moving = Math.abs(player.speed) > 20;
+  const bobY = moving ? Math.abs(Math.sin(player.bob)) * -7 : Math.sin(time * 2) * -2.5;
+  const x = player.x - camX, y = GROUND_Y + bobY;
+  ctx.fillStyle = 'rgba(0,0,0,.15)'; ell(x, GROUND_Y + 5, 26, 8);
+  ctx.save(); ctx.translate(x, y);
+  const stretch = moving ? 0.05 : 0;                            // squash & stretch
+  let psx = 1 + stretch, psy = 1 - stretch;
+  if (player.squash > 0) { const k = player.squash / 0.28; psx = 1 + 0.16 * k; psy = 1 - 0.2 * k; }
+  ctx.scale(psx, psy);
+  if (player.twirl > 0) ctx.rotate((1.4 - player.twirl) * 9);
+  ctx.translate(-x, -y);
+  drawCharacter(CHARACTERS[charIndex].id, colorIndex, x, y, 1, time, player.face);
+  ctx.restore();
+}
+
+/* ================= PARTICLES / HUD ================= */
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
+    ctx.fillStyle = p.c;
+    ctx.save(); ctx.translate(p.x - camX, p.y); ctx.rotate(p.t * 5);
+    ctx.fillRect(-p.r / 2, -p.r / 2, p.r, p.r);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+function drawHUD(time) {
+  pill(92, 44, '🌸 ' + flowersPicked + '   🎀 ' + wearOrder().filter(isWornUnlocked).length + '/23');
+  if (quest === 'found') {   // P1.3: show she's carrying the marble (working-memory aid)
+    ctx.fillStyle = 'rgba(20,30,50,.55)'; rr(200, 22, 150, 44, 22); ctx.fill();
+    ctx.fillStyle = '#8ecbff'; circle(228, 44, 13);
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; circle(224, 40, 4);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('marble!', 248, 45);
+  }
+  const pad = getPad();
+  ctx.font = '20px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = pad ? '#7CFC00' : 'rgba(255,255,255,.55)';
+  ctx.fillText(pad ? '● controller' : '○ controller', 640, 44);   // P2.2: clear of the voice button
+  if (lastZone && lastZone.name === 'Word Stones') {               // spelling tray
+    const w = currentWord();
+    for (let i = 0; i < 3; i++) {
+      const sx = W / 2 + (i - 1) * 64, sy = 70;
+      ctx.fillStyle = stoneTouched[i] ? 'rgba(255,217,61,.92)' : 'rgba(20,30,50,.5)';
+      rr(sx - 26, sy - 30, 52, 60, 12); ctx.fill();
+      ctx.fillStyle = stoneTouched[i] ? '#7a5c00' : '#fff';
+      ctx.font = 'bold 34px "Comic Sans MS",sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(stoneTouched[i] ? w.word[i] : '?', sx, sy + 2);
+    }
+  }
+}
+/* Zone names and accessory awards share one gentle banner — shown in every scene. */
+function drawBanner() {
+  if (!banner) return;
+  const a = banner.t < 0.3 ? banner.t / 0.3 : banner.t > 1.9 ? Math.max(0, (2.4 - banner.t) / 0.5) : 1;
+  ctx.globalAlpha = a;
+  outlineText(banner.text, W / 2, 120, 'bold 46px "Comic Sans MS",sans-serif', '#fff', 'rgba(40,60,90,.65)', 9);
+  ctx.globalAlpha = 1;
+}
+let prompt = null;   // {x, text} — x in world coords
+function drawPrompt(time) {
+  if (!prompt) return;
+  const label = '★ ' + prompt.text;
+  ctx.font = 'bold 20px "Comic Sans MS",sans-serif';
+  const w = ctx.measureText(label).width + 40;
+  // keep the pill on screen even at the world edges
+  let px = prompt.x - camX;
+  px = Math.max(w / 2 + 8, Math.min(W - w / 2 - 8, px));
+  ctx.fillStyle = 'rgba(20,30,50,.62)'; rr(px - w / 2, GROUND_Y - 176, w, 42, 21); ctx.fill();
+  const pulse = 1 + Math.sin(time * 5) * 0.06;
+  ctx.save(); ctx.translate(px, GROUND_Y - 155); ctx.scale(pulse, pulse);
+  ctx.fillStyle = '#ffe14d'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, 0, 0); ctx.restore();
+}
+// P1.3: while carrying the marble, a gentle arrow points toward the Cozy Cottage (Mabel's home).
+function drawMarbleArrow(time) {
+  if (quest !== 'found' || scene !== 'meadow') return;
+  const dir = player.x > 340 ? -1 : 1;
+  const ax = player.x - camX, ay = GROUND_Y - 208 + Math.sin(time * 3) * 8;
+  ctx.save(); ctx.translate(ax, ay); ctx.scale(dir, 1);
+  ctx.fillStyle = 'rgba(255,217,61,.95)'; ctx.strokeStyle = 'rgba(120,70,0,.6)'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, -13); ctx.lineTo(32, 0); ctx.lineTo(0, 13); ctx.lineTo(0, 6);
+  ctx.lineTo(-32, 6); ctx.lineTo(-32, -6); ctx.lineTo(0, -6); ctx.closePath();
+  ctx.fill(); ctx.stroke(); ctx.restore();
+  ctx.fillStyle = 'rgba(120,70,0,.9)'; ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText("to Mabel's!", ax, ay + 30);
+}
+
+/* ================= TITLE ================= */
+let titleSaid = false;
+let titleTapCd = 0;   // P1.2: deliberate-tap pacing on the title screens
+/* The wear picker shows up to 5 cards at a time around the selection, so it works the
+   same with 4 wearables or 24 — ◀ ▶ slide the row, tap picks, ★ starts. */
+function lookWindow() {
+  const opts = lookOptions(), n = opts.length;
+  const idx = ((titleLookIdx % n) + n) % n;
+  const items = [];
+  if (n <= 5) {
+    for (let i = 0; i < n; i++) items.push({ key: opts[i], i, ox: i - (n - 1) / 2 });
+  } else {
+    for (let o = -2; o <= 2; o++) {
+      const i = (((idx + o) % n) + n) % n;
+      items.push({ key: opts[i], i, ox: o });
+    }
+  }
+  return { opts, n, idx, items };
+}
+function drawTitle(time) {
+  camX = 0;
+  drawSky(time); drawHills(); drawTrees(time); drawGround(time);
+  drawButterflies(time); drawLeaves();
+  if (Math.random() < 0.08)                                      // drifting title sparkles
+    particles.push({ x: Math.random() * W, y: Math.random() * H * 0.55,
+      vx: 10 + Math.random() * 16, vy: -10 - Math.random() * 14,
+      life: 2.4, t: 0, c: ['#ffe14d', '#ffffff', '#ffc7e3'][(Math.random() * 3) | 0], r: 3 + Math.random() * 3 });
+  drawParticles();
+  ctx.fillStyle = 'rgba(35,45,80,.32)'; ctx.fillRect(0, 0, W, H);
+  const bobT = Math.sin(time * 1.6) * 5;                          // gently floating title card
+  ctx.fillStyle = 'rgba(255,255,255,.14)'; rr(W / 2 - 350, 30 + bobT, 700, 128, 44); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 3;
+  rr(W / 2 - 350, 30 + bobT, 700, 128, 44); ctx.stroke();
+  outlineText("Madison's", W / 2, 74 + bobT, 'bold 52px "Comic Sans MS",sans-serif',
+    '#ffe9b0', '#7a4a8a', 9);
+  outlineText('Magic Meadow', W / 2, 130 + bobT, 'bold 80px "Comic Sans MS",sans-serif',
+    '#ffffff', '#5a4a8a', 11);
+  ctx.fillStyle = '#fff'; ctx.font = 'italic 23px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('a one-button meadow adventure', W / 2, 184);
+  if (titleStep === 0) {
+    if (!titleSaid && voicesReady) { titleSaid = true; say('choose_character', 'Who do you want to be today?'); }
+    outlineText('Who do you want to be?', W / 2, 228, 'bold 30px "Comic Sans MS",sans-serif',
+      '#ffe9b0', 'rgba(40,60,90,.6)', 7);
+    const previewColors = [0, 4, 1];
+    CHARACTERS.forEach((ch, i) => {
+      const x = W / 2 + (i - 1) * 230, cy = 396, sel = i === charIndex;
+      ctx.fillStyle = 'rgba(0,0,0,.12)'; ell(x, cy + 102, 92, 12);
+      ctx.fillStyle = sel ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.55)';
+      rr(x - 88, cy - 118, 176, 208, 26); ctx.fill();
+      if (sel) {
+        ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 6 + Math.sin(time * 5) * 1.5;
+        rr(x - 88, cy - 118, 176, 208, 26); ctx.stroke();
+      }
+      drawCharacter(ch.id, sel ? colorIndex : previewColors[i], x, cy - 28, 1.35, time, 1);
+      ctx.font = 'bold 24px "Comic Sans MS",sans-serif';
+      const nw = ctx.measureText(ch.name).width + 40;
+      ctx.fillStyle = sel ? '#ffe14d' : 'rgba(90,74,138,.7)';
+      rr(x - nw / 2, cy + 52, nw, 40, 20); ctx.fill();
+      ctx.fillStyle = sel ? '#5a4a8a' : '#fff';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(ch.name, x, cy + 73);
+    });
+    pill(W / 2, 520, '◀ ▶  choose      ★  select');
+  } else if (titleStep === 1) {
+    if (!titleSaid && voicesReady) { titleSaid = true; say('choose_color', 'Now pick your favorite color!'); }
+    outlineText('Pick your favorite color!', W / 2, 228, 'bold 30px "Comic Sans MS",sans-serif',
+      '#ffe9b0', 'rgba(40,60,90,.6)', 7);
+    ctx.fillStyle = 'rgba(0,0,0,.12)'; ell(W / 2, 432, 120, 14);
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; rr(W / 2 - 115, 258, 230, 160, 26); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,225,77,.9)'; ctx.lineWidth = 4;
+    rr(W / 2 - 115, 258, 230, 160, 26); ctx.stroke();
+    drawCharacter(CHARACTERS[charIndex].id, colorIndex, W / 2, 394, 1.9, time, 1);
+    COLORS.forEach((c, i) => {
+      const sx = W / 2 + (i - 2.5) * 82, sy = 462, r = 25;
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; circle(sx, sy, r + 7);
+      ctx.fillStyle = c.c; circle(sx, sy, r);
+      ctx.fillStyle = 'rgba(255,255,255,.5)'; circle(sx - 8, sy - 9, 7);
+      if (i === colorIndex) {
+        ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.arc(sx, sy, r + 11 + Math.sin(time * 5) * 2, 0, 7); ctx.stroke();
+      }
+    });
+    pill(W / 2, 520, COLORS[colorIndex].name + '   •   ◀ ▶ choose   •   ★ ' + (lookOptions().length > 1 ? 'next' : 'start'));
+  } else if (!ward.open) {
+    // Outfit step only appears when at least one wearable has been earned.
+    // (When the wardrobe overlay is open it draws the grid instead.)
+    if (!titleSaid && voicesReady) { titleSaid = true; say('choose_outfit', 'Now pick what to wear!'); }
+    outlineText('Pick what to wear!', W / 2, 228, 'bold 30px "Comic Sans MS",sans-serif',
+      '#ffe9b0', 'rgba(40,60,90,.6)', 7);
+    const win = lookWindow(), savedLook = look;
+    for (const it of win.items) {
+      const x = W / 2 + it.ox * 178, cy = 396, sel = it.i === win.idx;
+      ctx.fillStyle = 'rgba(0,0,0,.12)'; ell(x, cy + 102, 82, 12);
+      ctx.fillStyle = sel ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.55)';
+      rr(x - 78, cy - 118, 156, 208, 26); ctx.fill();
+      if (sel) {
+        ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 6 + Math.sin(time * 5) * 1.5;
+        rr(x - 78, cy - 118, 156, 208, 26); ctx.stroke();
+      }
+      look = it.key; drawCharacter(CHARACTERS[charIndex].id, colorIndex, x, cy - 30, 1.2, time, 1); look = savedLook;
+      const label = wearName(it.key);
+      ctx.font = 'bold 18px "Comic Sans MS",sans-serif';
+      const nw = Math.min(152, ctx.measureText(label).width + 30);
+      ctx.fillStyle = sel ? '#ffe14d' : 'rgba(90,74,138,.7)';
+      rr(x - nw / 2, cy + 54, nw, 36, 18); ctx.fill();
+      ctx.fillStyle = sel ? '#5a4a8a' : '#fff';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, x, cy + 73);
+    }
+    pill(W / 2, 520, wearName(win.opts[win.idx]) + '   •   ◀ ▶  choose   •   ★  start');
+  }
+}
+
+/* ================= UPDATE ================= */
+let lastT = 0;
+function loop(t) {
+  const dt = Math.min(0.05, (t - lastT) / 1000 || 0.016);
+  lastT = t; update(dt, t / 1000); draw(t / 1000);
+  requestAnimationFrame(loop);
+}
+function updateAmbient(dt, time) {
+  birdTimer -= dt;
+  if (birdTimer <= 0) {
+    birds.push({ x: W + 50, y: 60 + Math.random() * 130, vx: -(45 + Math.random() * 45), ph: Math.random() * 7 });
+    birdTimer = 5 + Math.random() * 7;
+  }
+  for (const b of birds) { b.x += b.vx * dt; b.ph += dt * 9; }
+  birds = birds.filter(b => b.x > -60);
+  carriageTimer -= dt;                                        // horse-drawn carriage, background cameo
+  if (carriageTimer <= 0 && scene === 'meadow' && !carriage) {
+    carriage = { x: camX * 0.6 - 280, speed: 55 + Math.random() * 25, ph: Math.random() * 7, rot: 0 };
+    carriageTimer = 28 + Math.random() * 25;
+  }
+  if (carriage) {
+    carriage.x += carriage.speed * dt; carriage.ph += dt * 6;
+    carriage.rot += carriage.speed * dt / 14;
+    if (carriage.x - camX * 0.6 > W + 280) carriage = null;
+  }
+  for (const l of leaves) {
+    l.x += l.vx * dt; l.y += Math.sin(time * 1.4 + l.ph) * 24 * dt; l.rot += l.vr * dt;
+    if (l.x > W + 30) { l.x = -30; l.y = Math.random() * H; }
+  }
+  for (const p of particles) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 220 * dt; }
+  particles = particles.filter(p => p.t < p.life);
+  if (banner) { banner.t += dt; if (banner.t > 2.4) banner = null; }
+}
+function update(dt, time) {
+  updateAmbient(dt, time);
+  if (player.twirl > 0) player.twirl -= dt;
+  if (player.squash > 0) player.squash -= dt;
+  dragonT += dt;
+  if (dragonHop > 0) dragonHop -= dt;
+  dragonBlink -= dt; if (dragonBlink < -0.15) dragonBlink = 2.5 + Math.random() * 2.5;
+  if (ward.open) {                                        // dress-up inventory is a modal
+    updateWardrobe(dt);
+  }
+  else if (invite) {                                        // modal: grown-up activity invitation
+    if (actionEdge()) confirmInvite();                // ★ = the grown-up confirms "We did it!"
+    else if (exitEdge()) skipInvite();                // ✕ = keep playing; the outfit simply waits
+  }
+  else if (scene === 'title') updateTitle(dt, time);
+  else if (scene === 'meadow') updateMeadow(dt, time);
+  else if (scene === 'house') updateHouse(dt, time);
+  else if (scene === 'dollroom') updateDollRoom(dt, time);
+  else if (scene === 'dollhouse') updateDollhouse(dt, time);
+  else if (scene === 'paint') updatePaint(dt, time);
+  else if (scene === 'pond') updatePond(dt, time);
+  else if (scene === 'garden') updateGarden(dt, time);
+  else if (scene === 'ispy') updateIspy(dt, time);
+  else if (scene === 'flight') updateFlight(dt, time);
+  // warm scene-transition fade: swap the world at the halfway point
+  if (fadeT >= 0) {
+    fadeT += dt / 1.15;
+    if (fadeT >= 0.5 && fadeMid) { const m = fadeMid; fadeMid = null; m(); }
+    if (fadeT >= 1) { fadeT = -1; if (fadeEnd) { const e = fadeEnd; fadeEnd = null; e(); } }
+  }
+}
+function movePlayer(dt, minX, maxX) {
+  const m = moveInput();
+  player.speed += ((m * 260) - player.speed) * Math.min(1, dt * 8);
+  player.x = Math.max(minX, Math.min(maxX, player.x + player.speed * dt));
+  if (Math.abs(player.speed) > 20) { player.face = player.speed > 0 ? 1 : -1; player.bob += dt * 10; }
+}
+function updateTitle(dt) {
+  titleCooldown -= dt;
+  if (titleTapCd > 0) titleTapCd -= dt;
+  const m = moveInput();
+  if (titleCooldown <= 0 && m !== 0) {
+    if (titleStep === 0) charIndex = (charIndex + (m > 0 ? 1 : CHARACTERS.length - 1)) % CHARACTERS.length;
+    else if (titleStep === 1) colorIndex = (colorIndex + (m > 0 ? 1 : COLORS.length - 1)) % COLORS.length;
+    else { const n = lookOptions().length; titleLookIdx = (titleLookIdx + (m > 0 ? 1 : n - 1)) % n; }
+    titleCooldown = 0.28; blip(600);
+  }
+  if (actionEdge()) {
+    preloadVoices();                                    // user gesture unlocks audio
+    if (titleStep === 0) { titleStep = 1; titleSaid = false; blip(784); }
+    else if (titleStep === 1) {
+      if (lookOptions().length > 1) { titleStep = 2; titleSaid = false; blip(784); openWardrobe('title'); }
+      else beginMeadow();
+    }
+    else { look = lookOptions()[ward.sel]; saveProgress(); beginMeadow(); }
+  }
+  // P1.5: a mis-press isn't a trap — Esc / gamepad B steps back on the title screens.
+  if (exitEdge() && titleStep > 0) { titleStep--; titleSaid = false; blip(392); }
+}
+function beginMeadow(){
+  ward.open = false;
+  scene = 'meadow'; player.x = 140; camX = 0; titleSaid = false;
+  document.getElementById('hint').style.display = 'none';   // P2.1: parent-facing hint was covering the flower counter/tray
+  say('welcome', "Hello! Let's explore the meadow!"); happySound();
+}
+function updateMeadow(dt) {
+  if (dragonReady > 0) dragonReady -= dt;                // hello-window for the flight offer
+  if (zoneSayCd > 0) zoneSayCd -= dt;                   // P2.6: zone announcements don't re-fire within 6s
+  for (const s of FLOWER_SPOTS) {                        // flowers regrow — endless picking
+    if (s.pop > 0) s.pop -= dt;
+    if (!s.bloomed) {
+      s.regrow -= dt;
+      if (s.regrow <= 0) {                              // pronounced growing pop
+        s.bloomed = true; s.pop = 0.8;
+        burst(s.x, GROUND_Y - 60, ['#ffffff', '#ffd93d', s.c], 12, 90);
+        blip(660); setTimeout(() => blip(990), 120);
+      }
+    }
+  }
+  smokeTimer -= dt;                                     // chimney smoke
+  if (smokeTimer <= 0) {
+    smokeTimer = 1.4;
+    particles.push({ x: 362 + (Math.random() * 8 - 4), y: GROUND_Y - 222,
+      vx: 12 + Math.random() * 10, vy: -34 - Math.random() * 10,
+      life: 2.4, t: 0, c: 'rgba(230,230,235,.85)', r: 7 + Math.random() * 5 });
+  }
+  if (wordCelebrate > 0) {                              // next word after celebrating
+    wordCelebrate -= dt;
+    if (wordCelebrate <= 0) {
+      wordIdx = (wordIdx + 1) % WORDS.length; stoneTouched = [false, false, false];
+      say(currentWord().intro, 'Touch each letter!');
+    }
+  }
+  movePlayer(dt, 50, WORLD_W - 50);
+  camX += ((player.x - W / 2) - camX) * Math.min(1, dt * 4);
+  camX = Math.max(0, Math.min(WORLD_W - W, camX));
+
+  prompt = null;                                        // nearest interactable wins
+  let best = null, bestD = 1e9;
+  if (quest === 'seeking') {                            // Mabel's lost marble
+    const d = Math.abs(marbleX - player.x);
+    if (d < 110) { best = { kind: 'marble', x: marbleX, text: 'pick up the marble' }; bestD = d; }
+  }
+  for (let i = 0; i < 3; i++) {
+    const d = Math.abs(STONE_XS[i] - player.x);
+    if (d < 110 && d < bestD)
+      best = { kind: 'stone', i, x: STONE_XS[i], text: 'touch the letter ' + currentWord().word[i] }, bestD = d;
+  }
+  for (const z of zones) {
+    const d = Math.abs(z.x - player.x);
+    if (d < 150 && d < bestD) best = { kind: 'zone', z, x: z.x, text: dragonPrompt(z) }, bestD = d;
+  }
+  if (best) prompt = { x: best.x, text: best.text };
+
+  let zb = null, zbD = 170;                             // zone banner + narration
+  for (const z of zones) { const d = Math.abs(z.x - player.x); if (d < zbD) { zb = z; zbD = d; } }
+  if (zb !== lastZone) {
+    lastZone = zb;
+    if (zb) {
+      banner = { text: zb.name, t: 0 };
+      const key = { 'Cozy Cottage': 'cottage', 'Flower Garden': 'garden',
+        'Painting Corner': 'paint_corner', "Bramble's Hill": 'dragon_hill',
+        'Pond': 'zone_pond', 'Garden Gate': 'zone_gate', 'I Spy Hollow': 'zone_ispy' }[zb.name];
+      if (zoneSayCd <= 0) {                             // P2.6: debounce boundary chatter
+        zoneSayCd = 6;
+      if (zb.name === 'Word Stones') {
+        const pend = Object.keys(OUTFITS).find(k => quests[k] === 'invited');
+        if (pend) say('outfit_remind_' + pend, 'Your ' + OUTFITS[pend].name + ' is still waiting — find a grown-up whenever you like!');
+        else say(currentWord().intro, 'Touch each letter!');
+      }
+      else say(key, zb.name + '!');
+      }
+    }
+  }
+  if (best && actionEdge()) {
+    if (best.kind === 'stone') touchStone(best.i);
+    else if (best.kind === 'marble') findMarble();
+    else best.z.action();
+  }
+  // P1.6: controls are never explained audibly — say it once, gently, after the welcome line.
+  if (prompt && !starHintSaid) {
+    starHintSaid = true;
+    setTimeout(() => { if (scene === 'meadow') say('press_star', 'Press the big star to play!'); }, 4500);
+  }
+}
+function updateHouse(dt) {
+  camX = 0;
+  emberTimer -= dt;                                     // fireplace embers
+  if (emberTimer <= 0) {
+    emberTimer = 0.5;
+    particles.push({ x: 170 + (Math.random() * 60 - 30), y: 340,
+      vx: Math.random() * 20 - 10, vy: -40 - Math.random() * 20,
+      life: 1.2, t: 0, c: ['#ff9f2e', '#ffd93d', '#ff6b4a'][(Math.random() * 3) | 0], r: 3 + Math.random() * 3 });
+  }
+  movePlayer(dt, 90, 870);
+  prompt = null;
+  let best = null, bestD = 1e9;
+  const spots = [
+    { x: 60,  r: 90, text: 'the doll room',    act: enterDollRoom },
+    { x: 360, r: 95, text: 'play in the dollhouse', act: enterDollhouse },
+    { x: 480, r: 95, text: flowersPicked > 0 ? 'look at the flowers' : 'the flower vase',
+      act: () => {
+        if (flowersPicked > 0) {
+          say('lovely', 'Your flowers look lovely!'); happySound();
+          burst(480, 300, ['#ff8fb3', '#ffd166', '#ffffff'], 18, 120);
+          awardAcc('flower_basket', 480, 300);
+        } else say('vase_empty', "Let's go pick some flowers outside!");
+      } },
+    { x: 700, r: 95, text: 'say hi to Mabel',
+      act: () => {
+        say('mabel_hi', "Hi Madison! I'm Mabel!"); happySound();
+        burst(700, GROUND_Y - 170, ['#ffd93d', '#ffffff', '#ffb3c7'], 16, 110);
+      } },
+    { x: 850, r: 95, text: 'go outside', act: exitHouse },
+  ];
+  for (const s of spots) { const d = Math.abs(s.x - player.x); if (d < s.r && d < bestD) { best = s; bestD = d; } }
+  if (best) prompt = { x: best.x, text: best.text, act: best.act };
+  if (prompt && actionEdge()) best.act();
+  if (exitEdge()) exitHouse();
+}
+function updateDollRoom(dt) {
+  camX = 0;
+  movePlayer(dt, 90, 870);
+  for (const d of DOLLS) if (d.actT > 0) d.actT -= dt;
+  prompt = null;
+  let bd = null, bdd = 95;
+  for (const d of DOLLS) { const dd = Math.abs(d.x - player.x); if (dd < bdd) { bd = d; bdd = dd; } }
+  if (bd) prompt = { x: bd.x, text: 'play with ' + bd.name, doll: bd };
+  else if (Math.abs(810 - player.x) < 100) prompt = { x: 810, text: 'back to the cottage' };
+  else if (Math.abs(150 - player.x) < 95) prompt = { x: 150, text: 'change outfit' };
+  if (prompt && actionEdge()) {
+    if (prompt.doll) doDollAction(prompt.doll);
+    else if (prompt.x === 150) openWardrobe('dollroom');   // tap ★ = open the dress-up box
+    else exitDollRoom();
+  }
+  if (exitEdge()) exitDollRoom();
+}
+function updatePaint(dt) {
+  camX = 0;
+  paint.brushT += dt;
+  paint.selectCooldown -= dt;
+  const m = moveInput();
+  if (paint.selectCooldown <= 0 && m !== 0) {
+    paint.colorIdx = (paint.colorIdx + (m > 0 ? 1 : PAINT_COLORS.length - 1)) % PAINT_COLORS.length;
+    paint.selectCooldown = 0.3; blip(500 + paint.colorIdx * 150);
+  }
+  if (actionEdge()) { paintDab(); paint.holdT = 0; }
+  // P2.4: holding ★ paints too — one gentle dab per ~0.45s (no mashing needed, no runaway)
+  else if (actionHeld()) { paint.holdT += dt; if (paint.holdT > 0.45) { paintDab(); paint.holdT = 0; } }
+  else paint.holdT = 0;
+  if (saveEdge()) savePainting();                    // grown-up save: Y / right trigger / S
+  if (paint.toastT > 0) paint.toastT -= dt;
+  if (exitEdge()) exitPaint();
+}
+
+/* Camera bookkeeping for room transitions (interiors draw in screen space) */
+let paintReturnX = 300;
+/* ================= HOUSE INTERIOR ================= */
+function drawHouseScene(time) {
+  ctx.fillStyle = '#f6cf9a'; ctx.fillRect(0, 0, W, GROUND_Y);
+  ctx.fillStyle = '#e8b878'; ctx.fillRect(0, 0, W, 26);
+  ctx.fillStyle = '#c98f5a'; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.strokeStyle = '#a9744f'; ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    ctx.beginPath(); ctx.moveTo(0, GROUND_Y + 12 + i * 10); ctx.lineTo(W, GROUND_Y + 12 + i * 10); ctx.stroke();
+  }
+  ctx.fillStyle = '#e2725b'; ell(480, GROUND_Y + 40, 150, 34);      // rug
+  ctx.fillStyle = '#f6cf9a'; ell(480, GROUND_Y + 40, 110, 24);
+  ctx.fillStyle = '#e2725b'; ell(480, GROUND_Y + 40, 70, 14);
+  ctx.fillStyle = '#8a5a34'; rr(90, 90, 190, 150, 10); ctx.fill();  // window
+  ctx.fillStyle = '#aee3ff'; rr(104, 104, 162, 122, 6); ctx.fill();
+  ctx.fillStyle = '#ffe98a'; circle(220, 140, 20);
+  ctx.fillStyle = '#fff'; ell(150, 190, 40, 16); ell(180, 185, 30, 13);
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(185, 104); ctx.lineTo(185, 226);
+  ctx.moveTo(104, 165); ctx.lineTo(266, 165); ctx.stroke();
+  ctx.fillStyle = '#ff8fb3'; rr(70, 80, 34, 170, 8); ctx.fill(); rr(266, 80, 34, 170, 8); ctx.fill();
+  ctx.fillStyle = '#a06a42';                                       // doorway to the doll room, far left
+  ctx.beginPath(); ctx.moveTo(24, GROUND_Y); ctx.lineTo(24, GROUND_Y - 150);
+  ctx.arc(50, GROUND_Y - 150, 26, Math.PI, 0); ctx.lineTo(76, GROUND_Y); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#7a4e2e'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,220,150,.35)'; circle(50, GROUND_Y - 90, 30);  // warm glow spilling out
+  ctx.fillStyle = '#7a5c3a'; ctx.font = 'bold 20px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('← dolls', 52, GROUND_Y - 186);
+  ctx.fillStyle = '#9a6a5a'; rr(120, 300, 140, 168, 8); ctx.fill(); // fireplace
+  ctx.fillStyle = '#5a3a30'; rr(150, 340, 80, 100, 8); ctx.fill();
+  const f = Math.sin(time * 13) * 6;                               // animated fire
+  ctx.fillStyle = '#ff6b4a';
+  ctx.beginPath(); ctx.moveTo(170, 440); ctx.quadraticCurveTo(190, 380 + f, 210, 440); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ff9f2e';
+  ctx.beginPath(); ctx.moveTo(180, 440); ctx.quadraticCurveTo(190, 400 - f, 200, 440); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffe14d';
+  ctx.beginPath(); ctx.moveTo(186, 440); ctx.quadraticCurveTo(190, 416, 194, 440); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,160,60,.25)'; circle(190, 400, 70);
+  ctx.fillStyle = '#7a4e2e'; ctx.fillRect(110, 288, 160, 14);       // mantel
+  // dollhouse on the floor — Mabel-sized, of course
+  ctx.fillStyle = '#f4a9c0'; rr(305, 380, 100, 88, 6); ctx.fill();
+  ctx.fillStyle = '#e2725b';                                      // roof
+  ctx.beginPath(); ctx.moveTo(295, 384); ctx.lineTo(355, 328); ctx.lineTo(415, 384); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#9a6a5a'; ctx.fillRect(384, 338, 16, 30);       // chimney
+  ctx.fillStyle = '#ffe98a'; rr(315, 396, 22, 22, 3); ctx.fill(); rr(373, 396, 22, 22, 3); ctx.fill();
+  ctx.strokeStyle = '#c98f5a'; ctx.lineWidth = 3;                  // window crossbars
+  ctx.beginPath(); ctx.moveTo(326, 396); ctx.lineTo(326, 418); ctx.moveTo(315, 407); ctx.lineTo(337, 407);
+  ctx.moveTo(384, 396); ctx.lineTo(384, 418); ctx.moveTo(373, 407); ctx.lineTo(395, 407); ctx.stroke();
+  ctx.fillStyle = '#8a5a34'; rr(341, 424, 28, 44, 4); ctx.fill();  // tiny door
+  ctx.fillStyle = '#ffd166'; circle(362, 446, 3);
+  ctx.fillStyle = '#ff8fb3';                                      // heart on the tiny door
+  ctx.beginPath(); ctx.arc(349, 434, 4, 0, 7); ctx.arc(357, 434, 4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(345, 437); ctx.lineTo(353, 446); ctx.lineTo(361, 437); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#7a5c3a'; ctx.font = 'bold 18px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('the dollhouse', 355, 314);
+  ctx.fillStyle = '#8a5a34'; rr(620, 330, 220, 110, 10); ctx.fill(); // bed
+  ctx.fillStyle = '#8a5a34'; rr(604, 270, 26, 170, 10); ctx.fill(); // headboard
+  ctx.fillStyle = '#6a4526'; ctx.fillRect(632, 436, 18, 32); ctx.fillRect(810, 436, 18, 32); // legs
+  ctx.fillStyle = '#fff'; rr(630, 300, 70, 60, 10); ctx.fill();     // pillow
+  ctx.strokeStyle = '#d8c8e8'; ctx.lineWidth = 3; rr(630, 300, 70, 60, 10); ctx.stroke();
+  ctx.fillStyle = '#b78fff'; rr(620, 340, 220, 70, 10); ctx.fill(); // quilt
+  ctx.fillStyle = '#ffd93d';                                       // quilt polka dots
+  circle(680, 372, 7); circle(745, 388, 7); circle(805, 370, 7); circle(712, 398, 7); circle(778, 396, 7);
+  ctx.fillStyle = '#a58ae0'; rr(620, 340, 220, 20, 8); ctx.fill();
+  ctx.fillStyle = '#7a4e2e'; ctx.fillRect(640, 180, 180, 12);       // toy shelf
+  ctx.fillStyle = '#ff6b6b'; circle(680, 160, 16);
+  ctx.fillStyle = '#4db8ff'; ctx.fillRect(716, 146, 28, 28);
+  ctx.fillStyle = '#ffd93d'; ctx.fillRect(752, 146, 28, 28);
+  ctx.fillStyle = '#8a5a34'; ctx.fillRect(450, 380, 60, 80);        // table
+  ctx.fillStyle = '#a06a42'; ell(480, 378, 50, 12);
+  ctx.fillStyle = '#7fb8d9';                                       // vase
+  ctx.beginPath(); ctx.moveTo(468, 378); ctx.lineTo(472, 340); ctx.lineTo(488, 340);
+  ctx.lineTo(492, 378); ctx.closePath(); ctx.fill();
+  const nf = Math.min(flowersPicked, 5);                           // picked flowers live here
+  for (let i = 0; i < nf; i++) {
+    const vx = 480 + (i - 2) * 9, sway = Math.sin(time * 2 + i) * 3;
+    ctx.strokeStyle = '#3f8a49'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(vx, 344); ctx.quadraticCurveTo(vx + sway, 320, vx + sway * 1.5, 300); ctx.stroke();
+    ctx.fillStyle = ['#ff6b9d', '#ffd166', '#b78fff', '#ff8fb3', '#6fb7ff'][i];
+    for (let p = 0; p < 5; p++) { const a = p * Math.PI * 2 / 5;
+      circle(vx + sway * 1.5 + Math.cos(a) * 7, 298 + Math.sin(a) * 7, 5); }
+    ctx.fillStyle = '#fff'; circle(vx + sway * 1.5, 298, 4);
+  }
+  ctx.fillStyle = '#a06a42';                                       // door outside
+  ctx.beginPath(); ctx.moveTo(824, GROUND_Y); ctx.lineTo(824, GROUND_Y - 150);
+  ctx.arc(850, GROUND_Y - 150, 26, Math.PI, 0); ctx.lineTo(876, GROUND_Y); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#7a4e2e'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.fillStyle = '#ffd166'; circle(862, GROUND_Y - 70, 5);
+  ctx.fillStyle = '#7a5c3a'; ctx.font = 'bold 20px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('outside →', 850, GROUND_Y - 182);
+}
+
+/* ================= DOLL ROOM ================= */
+function drawDollRoom(time) {
+  ctx.fillStyle = '#f3d9e8'; ctx.fillRect(0, 0, W, GROUND_Y);   // pink playroom walls
+  ctx.fillStyle = '#e8b8d4'; ctx.fillRect(0, 0, W, 26);
+  ctx.fillStyle = '#d99ab8'; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.strokeStyle = '#bd7f9d'; ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    ctx.beginPath(); ctx.moveTo(0, GROUND_Y + 12 + i * 10); ctx.lineTo(W, GROUND_Y + 12 + i * 10); ctx.stroke();
+  }
+  ctx.fillStyle = '#e2729a'; ell(500, GROUND_Y + 40, 190, 36);  // big round rug
+  ctx.fillStyle = '#f3d9e8'; ell(500, GROUND_Y + 40, 140, 26);
+  ctx.fillStyle = '#e2729a'; ell(500, GROUND_Y + 40, 90, 16);
+  ctx.fillStyle = 'rgba(255,255,255,.5)';                       // star decals
+  ctx.font = 'bold 30px "Comic Sans MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('★', 300, 120); ctx.fillText('★', 640, 90); ctx.fillText('★', 830, 150);
+  // outfit changing station: the wardrobe
+  ctx.fillStyle = '#7a5c3a'; ctx.font = 'bold 20px "Comic Sans MS",sans-serif';
+  ctx.fillText('dress up', 152, 226);
+  ctx.fillStyle = '#ff8fb3'; rr(98, 238, 28, 24, 4); ctx.fill();
+  ctx.fillStyle = '#4db8ff'; rr(130, 238, 28, 24, 4); ctx.fill();
+  ctx.fillStyle = '#ffd93d'; rr(162, 238, 28, 24, 4); ctx.fill();
+  ctx.fillStyle = '#a06a42'; rr(110, 266, 84, 202, 8); ctx.fill();
+  ctx.strokeStyle = '#7a4e2e'; ctx.lineWidth = 4; rr(110, 266, 84, 202, 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(152, 266); ctx.lineTo(152, 468); ctx.stroke();
+  ctx.fillStyle = '#ffd166'; circle(142, 366, 5); circle(162, 366, 5);
+  // toy blocks
+  ctx.fillStyle = '#ff6b6b'; ctx.fillRect(252, 440, 28, 28);
+  ctx.fillStyle = '#4db8ff'; ctx.fillRect(284, 440, 28, 28);
+  ctx.fillStyle = '#ffd93d'; ctx.fillRect(268, 414, 28, 28);
+  ctx.fillStyle = '#5fd6a4'; ctx.fillRect(786, 440, 28, 28);
+  ctx.fillStyle = '#b78fff'; ctx.fillRect(752, 440, 28, 28);
+  // archway back to the cottage
+  ctx.fillStyle = '#a06a42';
+  ctx.beginPath(); ctx.moveTo(874, GROUND_Y); ctx.lineTo(874, GROUND_Y - 150);
+  ctx.arc(900, GROUND_Y - 150, 26, Math.PI, 0); ctx.lineTo(926, GROUND_Y); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#7a4e2e'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.fillStyle = '#7a5c3a'; ctx.font = 'bold 20px "Comic Sans MS",sans-serif';
+  ctx.fillText('cottage →', 900, GROUND_Y - 186);
+}
+function drawDoll(d, time) {
+  const x = d.x, dancing = d.action === 'dance' && d.actT > 0;
+  const bob = dancing ? Math.abs(Math.sin(time * 10)) * 14 : Math.sin(time * 2 + d.x) * 2;
+  const sleeping = d.action === 'sleep' && d.actT > 0;
+  const baseY = GROUND_Y - bob, o = DOLL_OUTFITS[d.outfit];
+  ctx.fillStyle = 'rgba(0,0,0,.12)'; ell(x, GROUND_Y + 6, 30, 8);
+  ctx.fillStyle = o.dress;                                            // dress
+  ctx.beginPath(); ctx.moveTo(x - 28, baseY - 6); ctx.lineTo(x, baseY - 66); ctx.lineTo(x + 28, baseY - 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#8a5a34'; ell(x - 12, baseY - 4, 9, 6); ell(x + 12, baseY - 4, 9, 6);  // shoes
+  ctx.strokeStyle = d.skin; ctx.lineWidth = 9; ctx.lineCap = 'round'; // arms
+  const wave = dancing ? Math.sin(time * 12) * 12 : 0;
+  ctx.beginPath(); ctx.moveTo(x - 12, baseY - 52); ctx.lineTo(x - 28, baseY - 36 + wave); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 12, baseY - 52); ctx.lineTo(x + 28, baseY - 36 - wave); ctx.stroke();
+  ctx.fillStyle = d.skin; circle(x, baseY - 84, 20);                  // head
+  ctx.fillStyle = d.hair;                                            // hair + buns
+  ctx.beginPath(); ctx.arc(x, baseY - 88, 20, Math.PI, 0); ctx.fill();
+  circle(x - 18, baseY - 102, 7); circle(x + 18, baseY - 102, 7);
+  if (sleeping) {                                                    // sleepy eyes
+    ctx.strokeStyle = '#3a2a2a'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(x - 11, baseY - 82); ctx.lineTo(x - 3, baseY - 82); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 3, baseY - 82); ctx.lineTo(x + 11, baseY - 82); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#3a2a2a'; circle(x - 7, baseY - 84, 2.6); circle(x + 7, baseY - 84, 2.6);
+    ctx.strokeStyle = '#3a2a2a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, baseY - 78, 7, 0.3, Math.PI - 0.3); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,150,150,.5)'; circle(x - 12, baseY - 74, 4); circle(x + 12, baseY - 74, 4);
+  if (o.hat) {                                                       // twinkle hat
+    ctx.fillStyle = o.hat;
+    ctx.beginPath(); ctx.moveTo(x - 14, baseY - 100); ctx.lineTo(x, baseY - 126); ctx.lineTo(x + 14, baseY - 100); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fff'; circle(x, baseY - 126, 4);
+  }
+  ctx.fillStyle = '#7a5c3a'; ctx.font = 'bold 18px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(d.name, x, baseY + 30);
+  if (d.actT <= 0) return;                                           // action extras below
+  if (d.action === 'brush') {
+    const bx2 = x + 32 + Math.sin(time * 9) * 8, by2 = baseY - 92;
+    ctx.fillStyle = '#a06a42'; ctx.fillRect(bx2 - 4, by2 - 26, 8, 26);
+    ctx.fillStyle = '#e8b878'; ctx.fillRect(bx2 - 10, by2 - 38, 20, 14);
+  } else if (d.action === 'tea') {
+    for (const s of [-1, 1]) {
+      const cx2 = x + s * 46, cy2 = baseY - 16;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.moveTo(cx2 - 10, cy2); ctx.lineTo(cx2 - 7, cy2 + 14);
+      ctx.lineTo(cx2 + 7, cy2 + 14); ctx.lineTo(cx2 + 10, cy2); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx2, cy2 - 2);
+      ctx.quadraticCurveTo(cx2 + 4, cy2 - 10, cx2, cy2 - 16); ctx.stroke();
+    }
+  } else if (d.action === 'dance') {
+    ctx.fillStyle = '#7c6cf0'; ctx.font = 'bold 30px "Comic Sans MS",sans-serif';
+    ctx.fillText('♪', x - 36, baseY - 120 + Math.sin(time * 6) * 8);
+    ctx.fillText('♫', x + 36, baseY - 132 + Math.cos(time * 5) * 8);
+  } else if (d.action === 'sleep') {
+    ctx.fillStyle = '#b78fff'; rr(x - 30, baseY - 42, 60, 38, 8); ctx.fill();
+    ctx.fillStyle = '#8a7ae0'; ctx.font = 'bold 26px "Comic Sans MS",sans-serif';
+    const rise = (3 - d.actT) * 10;
+    ctx.fillText('z', x + 32, baseY - 128 - rise);
+    ctx.fillText('Z', x + 46, baseY - 150 - rise);
+  }
+}
+
+/* ================= DOLLHOUSE MINI-GAME ================= */
+/* "Whoosh — you're tiny!" The dollhouse on the cottage floor becomes a room of its own.
+   Single screen like every other room, same controls: walk up, press ★ (or tap it).
+   Four cosy activities, no fails, everything celebrates. */
+let dh = { wingsOn: false, tower: 0, towerT: 0, teaT: 0, splashT: 0, shimmer: 0 };
+function enterDollhouse() {
+  fadeTo(() => {
+    scene = 'dollhouse'; player.x = 150; player.face = 1; player.speed = 0;
+    player.squash = 0.35;                                 // whoosh! as tiny as a dolly
+    showExit(true); exitHintSoon('dollhouse');
+    say('dh_enter', "The dollhouse! Whoosh! You are as tiny as a dolly now. Let's play inside!");
+    happySound();
+  });
+}
+function exitDollhouse() {
+  fadeTo(() => {
+    scene = 'house'; player.x = 360; player.face = 1; player.speed = 0;
+    showExit(true);
+    say('dh_exit', 'Back in the cottage!');
+  });
+}
+function dhFairy() {
+  dh.wingsOn = true; dh.shimmer = 1.4;
+  burst(185, GROUND_Y - 250, ['#ffb3d9', '#ffe14d', '#ffffff'], 24, 180);
+  blip(880); setTimeout(() => blip(1174), 130);
+  say('dh_fairy', "Pop the fairy doll's wings on! Flutter, flutter!");
+  awardAcc('butterfly_wings', 185, GROUND_Y - 250);
+}
+function dhTea() {
+  dh.teaT = 3;
+  burst(470, GROUND_Y - 150, ['#ffb3c7', '#ffffff', '#ffd93d'], 16, 130);
+  blip(660); setTimeout(() => blip(880), 120); setTimeout(() => blip(990), 260);
+  say('dh_tea', 'Tea party in the dollhouse! Clink, clink, sip, sip!');
+}
+function dhBlocks() {
+  dh.tower = dh.tower >= 5 ? 1 : dh.tower + 1;
+  dh.towerT = 0.4;
+  blip(440 + dh.tower * 90);
+  burst(665, GROUND_Y - 60 - dh.tower * 34, ['#ff6b6b', '#4db8ff', '#ffd93d', '#5fd6a4'], 10, 110);
+  if (dh.tower === 5) {
+    say('dh_block_5', 'Five blocks! A tower! Wheee!');
+    happySound();
+    burst(665, GROUND_Y - 230, ['#ffd93d', '#ffffff', '#ff8fb3'], 40, 260);
+    awardAcc('sparkle_trainers', 665, GROUND_Y - 230);
+    setTimeout(() => { dh.tower = 0; }, 2200);            // it tumbles softly — build again any time
+  } else {
+    say('dh_block_' + dh.tower,
+      ['One block!', 'Two blocks! Stack it higher!', 'Three blocks! Up, up, up!', 'Four blocks! One more!'][dh.tower - 1]);
+  }
+}
+function dhPuddle() {
+  dh.splashT = 1;
+  burst(820, GROUND_Y + 4, ['#bfe8ff', '#ffffff', '#6fbde0'], 20, 170);
+  blip(520); setTimeout(() => blip(700), 140);
+  player.squash = 0.25;
+  say('dh_puddle', 'Splash! What a puddle jump!');
+  awardAcc('rainbow_wellies', 820, GROUND_Y + 4);
+}
+/* Taps: rooms with things to touch answer a tap, same as the cottage and doll room. */
+function dollhouseTap(cx) {
+  const spots = [
+    { x: 185, f: dhFairy }, { x: 470, f: dhTea }, { x: 665, f: dhBlocks },
+    { x: 820, f: dhPuddle }, { x: 908, f: exitDollhouse },
+  ];
+  let best = null, bd = 125;
+  for (const s of spots) { const d = Math.abs(s.x - cx); if (d < bd) { best = s; bd = d; } }
+  if (best) best.f();
+}
+function updateDollhouse(dt, time) {
+  camX = 0;
+  if (dh.towerT > 0) dh.towerT -= dt;
+  if (dh.teaT > 0) dh.teaT -= dt;
+  if (dh.splashT > 0) dh.splashT -= dt;
+  if (dh.shimmer > 0) dh.shimmer -= dt;
+  movePlayer(dt, 90, 870);
+  prompt = null;
+  let best = null, bestD = 1e9;
+  const spots = [
+    { x: 185, r: 95, text: dh.wingsOn ? 'flutter the fairy' : 'put on the fairy wings', f: dhFairy },
+    { x: 470, r: 95, text: 'tea party', f: dhTea },
+    { x: 665, r: 95, text: 'stack a block  ' + Math.min(5, dh.tower) + '/5', f: dhBlocks },
+    { x: 820, r: 90, text: 'splash in the puddle', f: dhPuddle },
+    { x: 908, r: 95, text: 'back to the cottage', f: exitDollhouse },
+  ];
+  for (const s of spots) { const d = Math.abs(s.x - player.x); if (d < s.r && d < bestD) { best = s; bestD = d; } }
+  if (best) prompt = { x: best.x, text: best.text, f: best.f };
+  if (prompt && actionEdge()) prompt.f();
+  if (exitEdge()) exitDollhouse();
+}
+function tinyHeart(x, y, s, c) {
+  ctx.fillStyle = c;
+  circle(x - s * 0.5, y - s * 0.35, s * 0.5); circle(x + s * 0.5, y - s * 0.35, s * 0.5);
+  ctx.beginPath(); ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.closePath(); ctx.fill();
+}
+function drawFairyDoll(time, x, baseY) {
+  const on = dh.wingsOn;
+  const bob = on ? Math.sin(time * 3) * 4 : Math.sin(time * 1.6) * 1.5;
+  const y = baseY - bob;
+  ctx.fillStyle = 'rgba(0,0,0,.10)'; ell(x, baseY + 4, 26, 7);
+  if (dh.shimmer > 0) {                                     // award sparkle glow
+    ctx.fillStyle = 'rgba(255,230,120,' + (dh.shimmer * 0.4).toFixed(2) + ')';
+    circle(x, y - 60, 62);
+  }
+  const flap = Math.sin(time * 9) * (on ? 0.35 : 0.06);     // wings on, or ghost outlines inviting ★
+  for (const s of [-1, 1]) {
+    ctx.save(); ctx.translate(x + s * 6, y - 52); ctx.scale(s, 1); ctx.rotate(-0.3 + flap);
+    if (on) {
+      ctx.fillStyle = 'rgba(255,170,215,.92)'; ell(11, -8, 14, 20);
+      ctx.fillStyle = 'rgba(255,215,140,.92)'; ell(10, 12, 11, 13);
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; circle(15, -12, 3.2);
+    } else {
+      ctx.strokeStyle = 'rgba(255,150,200,' + (0.35 + Math.sin(time * 4) * 0.2).toFixed(2) + ')';
+      ctx.lineWidth = 3; ctx.setLineDash([5, 5]);
+      ell(11, -8, 14, 20); ctx.stroke(); ell(10, 12, 11, 13); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+  ctx.fillStyle = '#ff9ec6';                                 // little dress
+  ctx.beginPath(); ctx.moveTo(x - 11, y - 4); ctx.lineTo(x + 11, y - 4); ctx.lineTo(x + 21, y); ctx.lineTo(x - 21, y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff'; circle(x - 6, y - 12, 3); circle(x + 6, y - 9, 3);
+  ctx.strokeStyle = '#ffd9b8'; ctx.lineWidth = 6; ctx.lineCap = 'round';   // arms
+  ctx.beginPath(); ctx.moveTo(x - 8, y - 44); ctx.lineTo(x - 19, y - 32); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 8, y - 44); ctx.lineTo(x + 19, y - 32); ctx.stroke();
+  ctx.fillStyle = '#ffd9b8'; circle(x, y - 62, 17);          // head  (translate-free: x explicit)
+  ctx.fillStyle = '#8a5a34';
+  ctx.beginPath(); ctx.arc(x, y - 66, 17, Math.PI * 0.95, Math.PI * 2.05); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x - 15, y - 58, 6, 11, 0.3, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + 15, y - 58, 6, 11, -0.3, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2c2c34'; circle(x - 6, y - 62, 2.6); circle(x + 6, y - 62, 2.6);
+  ctx.strokeStyle = '#a05a3a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y - 57, 6, 0.35, Math.PI - 0.35); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,140,160,.55)'; circle(x - 10, y - 56, 3.4); circle(x + 10, y - 56, 3.4);
+  ctx.fillStyle = '#ffe14d';
+  for (let p = 0; p < 5; p++) circle(x + 14 + Math.cos(p * 1.257) * 5.5, y - 74 + Math.sin(p * 1.257) * 5.5, 3.6);
+  ctx.fillStyle = '#fff'; circle(x + 14, y - 74, 3);
+}
+function drawDollhouseScene(time) {
+  /* --- walls: tiny wallpaper over wainscot, warm plank floor --- */
+  ctx.fillStyle = '#f7e2ec'; ctx.fillRect(0, 0, W, GROUND_Y);
+  ctx.fillStyle = '#f0cfe0';
+  for (let i = 0; i < 24; i++) ctx.fillRect(i * 40, 0, 20, GROUND_Y - 46);          // stripes
+  ctx.fillStyle = 'rgba(255,255,255,.6)';
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 12; c++) circle(30 + c * 80 + (r % 2) * 40, 56 + r * 68, 4);  // dots
+  ctx.fillStyle = '#e8b8cc'; ctx.fillRect(0, GROUND_Y - 46, W, 46);                 // wainscot
+  ctx.fillStyle = '#d99ab8'; ctx.fillRect(0, GROUND_Y - 50, W, 6);
+  ctx.fillStyle = '#d8a878'; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);            // floorboards
+  ctx.strokeStyle = '#b98556'; ctx.lineWidth = 3;
+  for (let i = 0; i < 6; i++) {
+    ctx.beginPath(); ctx.moveTo(0, GROUND_Y + 8 + i * 12); ctx.lineTo(W, GROUND_Y + 8 + i * 12); ctx.stroke();
+  }
+  for (let i = 0; i < 7; i++) {
+    const bx = (i * 163) % W;
+    ctx.beginPath(); ctx.moveTo(bx, GROUND_Y); ctx.lineTo(bx, H); ctx.stroke();
+  }
+  ctx.globalAlpha = 0.5; ctx.fillStyle = '#f2b8cc'; ell(470, GROUND_Y + 30, 210, 34);  // rug, under everything
+  ctx.fillStyle = '#e8a0bc'; ell(470, GROUND_Y + 30, 150, 24); ctx.globalAlpha = 1;
+  /* --- the GIANT window: proof we're doll-sized (real room beyond) --- */
+  ctx.fillStyle = 'rgba(255,244,190,.30)';                                         // sunbeam on the floor
+  ctx.beginPath(); ctx.moveTo(392, 70); ctx.lineTo(596, 70); ctx.lineTo(712, GROUND_Y); ctx.lineTo(316, GROUND_Y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#8a5a34'; rr(352, 34, 268, 196, 14); ctx.fill();
+  const wg = ctx.createLinearGradient(0, 48, 0, 220);
+  wg.addColorStop(0, '#bfe8ff'); wg.addColorStop(1, '#ffe9c9');
+  ctx.fillStyle = wg; rr(364, 46, 244, 172, 8); ctx.fill();
+  ctx.save(); ctx.beginPath(); rr(364, 46, 244, 172, 8); ctx.clip();
+  ctx.fillStyle = '#a5c8e8'; ctx.fillRect(364, 160, 244, 58);                       // giant carpet
+  ctx.fillStyle = '#8a5a34'; ctx.fillRect(548, 46, 46, 120);                        // giant table leg
+  ctx.fillStyle = '#b07a4a'; ctx.fillRect(548, 150, 66, 16);
+  ctx.fillStyle = '#ffd93d'; rr(386, 118, 56, 44, 6); ctx.fill();                   // giant toy block
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 30px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('B', 414, 141);
+  ctx.fillStyle = '#ff9f6a'; ell(466, 186, 52, 16);                                 // giant rug edge
+  ctx.restore();
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(478, 46); ctx.lineTo(478, 218); ctx.moveTo(364, 132); ctx.lineTo(608, 132); ctx.stroke();
+  /* --- paper garland across the top --- */
+  const cols = ['#ff8fb3', '#ffd166', '#6fb7ff', '#5fd6a4', '#b78fff'];
+  ctx.strokeStyle = '#c9a07a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, 14); ctx.quadraticCurveTo(W / 2, 46, W, 14); ctx.stroke();
+  for (let i = 0; i < 13; i++) {
+    const t = i / 12, gx = t * W;
+    const gy = (1 - t) * (1 - t) * 14 + 2 * (1 - t) * t * 46 + t * t * 14 + 16;
+    const sway = Math.sin(time * 2 + i) * 3;
+    ctx.fillStyle = cols[i % 5];
+    ctx.beginPath(); ctx.moveTo(gx - 12, gy); ctx.lineTo(gx + 12, gy);
+    ctx.lineTo(gx + sway, gy + 30); ctx.closePath(); ctx.fill();
+  }
+  /* --- bedroom nook (left): tiny bed with the fairy doll --- */
+  ctx.fillStyle = 'rgba(0,0,0,.08)'; ell(180, GROUND_Y + 10, 140, 16);
+  ctx.fillStyle = '#a06a42'; rr(70, GROUND_Y - 142, 224, 142, 8); ctx.fill();       // bed base
+  ctx.fillStyle = '#8a5a34'; rr(56, GROUND_Y - 196, 28, 196, 9); ctx.fill();        // headboard
+  ctx.fillStyle = '#9a6a4c'; circle(70, GROUND_Y - 196, 9);
+  ctx.fillStyle = '#fff'; rr(92, GROUND_Y - 176, 66, 40, 12); ctx.fill();           // pillow
+  ctx.strokeStyle = '#e0d4f0'; ctx.lineWidth = 3; rr(92, GROUND_Y - 176, 66, 40, 12); ctx.stroke();
+  ctx.fillStyle = '#b78fff'; rr(74, GROUND_Y - 126, 214, 120, 8); ctx.fill();       // quilt
+  ctx.fillStyle = '#ffd93d';
+  circle(120, GROUND_Y - 92, 7); circle(186, GROUND_Y - 74, 7); circle(250, GROUND_Y - 96, 7); circle(150, GROUND_Y - 50, 7);
+  ctx.fillStyle = '#a58ae0'; rr(74, GROUND_Y - 126, 214, 20, 8); ctx.fill();
+  drawFairyDoll(time, 185, GROUND_Y - 142);
+  /* --- tea table (centre) --- */
+  ctx.fillStyle = 'rgba(0,0,0,.08)'; ell(470, GROUND_Y + 8, 110, 14);
+  ctx.fillStyle = '#c9a07a'; rr(392, GROUND_Y - 100, 158, 16, 6); ctx.fill();       // table top
+  ctx.fillStyle = '#a5815a'; rr(400, GROUND_Y - 84, 14, 84); rr(528, GROUND_Y - 84, 14, 84); ctx.fill();
+  const hop = dh.teaT > 0 ? Math.abs(Math.sin(time * 11)) * -7 : 0;                 // cups dance at tea time
+  ctx.fillStyle = '#ffb3c7'; ell(462, GROUND_Y - 116 + hop * 0.4, 22, 17);          // teapot
+  ctx.fillStyle = '#ff9ec6'; rr(454, GROUND_Y - 134 + hop * 0.4, 16, 10, 4); ctx.fill();
+  ctx.strokeStyle = '#ffb3c7'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(482, GROUND_Y - 120 + hop * 0.4); ctx.quadraticCurveTo(496, GROUND_Y - 116 + hop * 0.4, 486, GROUND_Y - 104 + hop * 0.4); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.8)';                                           // steam
+  for (let i = 0; i < 3; i++) {
+    const st = (time * 0.7 + i * 0.33) % 1;
+    ctx.globalAlpha = 0.55 * (1 - st);
+    circle(462 + Math.sin(time * 2 + i) * 5, GROUND_Y - 140 - st * 34, 5 + st * 4);
+  }
+  ctx.globalAlpha = 1;
+  for (const [cx2, sc] of [[420, -1], [514, 1]]) {                                  // two teacups
+    const cy2 = GROUND_Y - 106 + hop;
+    ctx.fillStyle = '#fff'; rr(cx2 - 13, cy2 - 4, 26, 20, 5); ctx.fill();
+    ctx.strokeStyle = '#ffb3c7'; ctx.lineWidth = 3; rr(cx2 - 13, cy2 - 4, 26, 20, 5); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx2 + sc * 15, cy2 + 5, 7, -1.2, 1.2); ctx.stroke();
+    ctx.fillStyle = '#ff8fb3'; ctx.fillRect(cx2 - 13, cy2 + 8, 26, 4);
+    ctx.fillStyle = '#e8dcc8'; ell(cx2, cy2 + 18, 18, 5);                           // saucer
+  }
+  if (dh.teaT > 0) {                                                                // hearts while sipping
+    for (let i = 0; i < 3; i++) {
+      const ht = (3 - dh.teaT) * 60 + i * 34;
+      tinyHeart(440 + i * 34, GROUND_Y - 150 - (ht % 90), 8, 'rgba(255,120,160,.85)');
+    }
+  }
+  /* --- block corner: the tower grows one ★ at a time --- */
+  const blockCols = ['#ff6b6b', '#4db8ff', '#ffd93d', '#5fd6a4', '#b78fff'];
+  const letters = ['A', 'B', 'C', 'D', 'E'];
+  const bump = dh.towerT > 0 ? Math.sin((0.4 - dh.towerT) / 0.4 * Math.PI) * 6 : 0;
+  ctx.fillStyle = 'rgba(0,0,0,.08)'; ell(665, GROUND_Y + 8, 52, 11);
+  for (let i = 0; i < dh.tower; i++) {
+    const bx = 665 + ((i % 2) ? 5 : -5) - bump * 0.5, by = GROUND_Y - 34 - i * 34 - (i === dh.tower - 1 ? bump : 0);
+    ctx.fillStyle = blockCols[i % 5]; rr(bx - 26, by - 32, 52, 32, 6); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 3; rr(bx - 26, by - 32, 52, 32, 6); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 22px "Comic Sans MS",sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(letters[i], bx, by - 15);
+  }
+  if (dh.tower >= 5) {                                                             // the finished tower shines
+    ctx.save(); ctx.shadowColor = '#ffe14d'; ctx.shadowBlur = 18;
+    ctx.fillStyle = '#ffe14d'; star(665, GROUND_Y - 190, 17, 7.5); ctx.restore();
+    ctx.fillStyle = '#fff3b0';
+    for (let i = 0; i < 6; i++) circle(665 + Math.cos(time * 3 + i) * 40, GROUND_Y - 120 + Math.sin(time * 3 + i) * 70, 3);
+  }
+  if (dh.tower === 0) {                                                            // waiting blocks
+    ctx.fillStyle = 'rgba(0,0,0,.06)'; ell(665, GROUND_Y + 6, 44, 9);
+    ctx.fillStyle = blockCols[0]; rr(640, GROUND_Y - 28, 50, 26, 5); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 3; rr(640, GROUND_Y - 28, 50, 26, 5); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px "Comic Sans MS",sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A', 665, GROUND_Y - 14);
+  }
+  /* --- puddle by the little door (far right) --- */
+  const sq = dh.splashT > 0 ? Math.sin(dh.splashT * 14) * 3 : 0;
+  ctx.fillStyle = '#8ec8ea'; ell(820, GROUND_Y + 34 + sq, 78, 18 - Math.abs(sq));
+  ctx.fillStyle = 'rgba(255,255,255,.45)'; ell(798, GROUND_Y + 28, 34, 7);
+  if (dh.splashT > 0) {
+    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 3;
+    for (const rr2 of [0.2, 0.6]) if (dh.splashT > rr2) {
+      ctx.beginPath(); ctx.ellipse(820, GROUND_Y + 34, 40 + (1 - dh.splashT) * 70 * rr2, 12 + (1 - dh.splashT) * 20 * rr2, 0, 0, 7); ctx.stroke();
+    }
+  }
+  ctx.fillStyle = '#a06a42';                                                        // the little door = way home
+  ctx.beginPath(); ctx.moveTo(880, GROUND_Y); ctx.lineTo(880, GROUND_Y - 150);
+  ctx.arc(908, GROUND_Y - 150, 28, Math.PI, 0); ctx.lineTo(936, GROUND_Y); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#7a4e2e'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,244,200,.5)';                                           // warm light spilling in
+  ctx.beginPath(); ctx.moveTo(886, GROUND_Y); ctx.lineTo(930, GROUND_Y);
+  ctx.lineTo(960, GROUND_Y + 46); ctx.lineTo(850, GROUND_Y + 46); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffd166'; circle(924, GROUND_Y - 74, 6);
+  ctx.fillStyle = '#7a5c3a'; ctx.font = 'bold 20px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('cottage →', 908, GROUND_Y - 196);
+}
+
+/* ================= PAINT MODE ================= */
+function drawPaintScene(time) {
+  ctx.fillStyle = '#ded4f0'; ctx.fillRect(0, 0, W, GROUND_Y);
+  ctx.fillStyle = '#c9bde4'; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  outlineText('My Painting', W / 2, 52, 'bold 40px "Comic Sans MS",sans-serif', '#fff', '#7a6a9a', 8);
+  ctx.fillStyle = '#fffdf6'; ctx.fillRect(200, 90, 560, 360);       // paper
+  ctx.strokeStyle = '#b0a0cc'; ctx.lineWidth = 4; ctx.strokeRect(200, 90, 560, 360);
+  ctx.fillStyle = 'rgba(255,220,150,.8)';                          // tape corners
+  ctx.fillRect(192, 82, 44, 20); ctx.fillRect(724, 82, 44, 20);
+  ctx.fillRect(192, 438, 44, 20); ctx.fillRect(724, 438, 44, 20);
+  ctx.save(); ctx.beginPath(); ctx.rect(200, 90, 560, 360); ctx.clip();
+  for (const d of paint.dabs) {                                    // flower dabs
+    ctx.fillStyle = d.c;
+    for (let p = 0; p < d.petals; p++) { const a = p * Math.PI * 2 / d.petals;
+      circle(d.x + Math.cos(a) * d.r * 0.62, d.y + Math.sin(a) * d.r * 0.62, d.r * 0.42); }
+    ctx.fillStyle = '#fff'; circle(d.x, d.y, d.r * 0.3);
+  }
+  ctx.restore();
+  const bx = 480 + Math.cos(paint.brushT * 0.7) * 180,            // wandering brush
+        by = 275 + Math.sin(paint.brushT * 1.1) * 105;
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(bx + 26, by - 40); ctx.lineTo(bx + 6, by - 8); ctx.stroke();
+  ctx.fillStyle = PAINT_COLORS[paint.colorIdx]; circle(bx, by, 10);
+  ctx.strokeStyle = 'rgba(0,0,0,.2)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(bx, by, 10, 0, 7); ctx.stroke();
+  ctx.fillStyle = '#5a4a7a'; ctx.font = 'bold 22px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('◀ ▶  choose a color      ★  paint', W / 2, 490);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(122,106,154,.8)'; ctx.font = '15px "Comic Sans MS",sans-serif';
+  ctx.fillText('grown-ups: Y / S saves the painting', 24, 36);
+  ctx.textAlign = 'center';
+  if (paint.toastT > 0) {                                        // quiet save confirmation
+    ctx.font = 'bold 26px "Comic Sans MS",sans-serif';
+    const tw = ctx.measureText(paint.toast).width + 48;
+    ctx.fillStyle = 'rgba(90,74,122,.9)';
+    ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, 424, tw, 48, 24); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
+    ctx.fillText(paint.toast, W / 2, 449);
+  }
+  PAINT_COLORS.forEach((c, i) => {
+    const sx = 380 + i * 100, sy = 522, r = 24;
+    ctx.fillStyle = c; circle(sx, sy, r);
+    ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 7); ctx.stroke();
+    if (i === paint.colorIdx) {
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(sx, sy, r + 8 + Math.sin(time * 5) * 2, 0, 7); ctx.stroke();
+    }
+  });
+}
+
+/* ================= NEW AREAS: pond, fairy garden, I-spy hollow, dragon flight ================= */
+function enterPond(){
+  fadeTo(() => {
+    scene = 'pond'; player.x = 200; player.y = GROUND_Y; player.face = 1;
+    showExit(true); exitHintSoon('pond'); say('pond', 'The pond! The ducks say hello!');
+  });
+}
+function exitPond(){
+  fadeTo(() => {
+    scene = 'meadow'; player.x = 3150; player.y = GROUND_Y; showExit(false);
+    say('meadow', 'Back to the meadow!');
+  });
+}
+function enterGarden(){
+  fadeTo(() => {
+    scene = 'garden'; player.x = 200; player.y = GROUND_Y; player.face = 1;
+    gardenReset();
+    showExit(true); exitHintSoon('garden'); say('fairy_garden', 'The fairy garden! So sparkly and glowy!');
+  });
+}
+function exitGarden(){
+  fadeTo(() => {
+    scene = 'meadow'; player.x = 3450; player.y = GROUND_Y; showExit(false);
+    say('meadow', 'Back to the meadow!');
+  });
+}
+function enterIspy(){
+  fadeTo(() => {
+    scene = 'ispy'; player.x = 150; player.y = GROUND_Y; player.face = 1;
+    ispy = { items: ISPY_ITEMS.map(o => ({ ...o, found: false })), done: false };
+    showExit(true); exitHintSoon('ispy'); say('ispy_intro', "Let's play I spy! Walk around and look closely!");
+  });
+}
+function exitIspy(){
+  fadeTo(() => {
+    scene = 'meadow'; player.x = 3750; player.y = GROUND_Y; showExit(false);
+    say('meadow', 'Back to the meadow!');
+  });
+}
+// Dragon flight: a free, calm ride — never timed, never limited, never earned.
+// Press ★ to land whenever you like; Bramble lands on his own after one gentle loop.
+let flightT = 0;
+function startFlight(){
+  dragonReady = 0;
+  awardAcc('sparkle_cape', player.x, GROUND_Y - 140);
+  fadeTo(() => {
+    scene = 'flight'; flightT = 0; showExit(true);
+    say('flight_up', 'Bramble says hello! Up, up and away! Wheee!');
+    happySound();
+  });
+}
+function landFlight(){
+  fadeTo(() => {
+    scene = 'meadow'; player.x = 2750; player.y = GROUND_Y; showExit(false);
+    say('flight_land', 'What a lovely flight! Thank you, Bramble!');
+  });
+}
+
+/* ---- pond state ---- */
+let ripples = [], pondPops = 0, ducks = [
+  { x: 430, vx: 12, ph: 0, h: 0, vy: 0, s: 1.15 },   // mother duck
+  { x: 600, vx: -9, ph: 2, h: 0, vy: 0, s: 0.85 },   // duckling
+  { x: 700, vx: 10, ph: 4, h: 0, vy: 0, s: 0.85 },   // duckling
+  { x: 820, vx: 7, ph: 1, h: 0, vy: 0, s: 1.0 },
+];
+function updatePond(dt, time) {
+  for (const d of ducks) {
+    if (d.h > 0 || d.vy > 0) {                         // airborne — a joyful little pop
+      d.vy -= 620 * dt;                                // gravity brings them back down
+      d.h += d.vy * dt; d.x += d.vx * dt;
+      d.ph += dt * 14;                                 // frantic happy wing-flap
+      if (d.h <= 0) {                                  // land with a splash + ripple
+        d.h = 0; d.vy = 0; d.vx = (d.vx >= 0 ? 1 : -1) * (20 + Math.random() * 40);
+        ripples.push({ x: d.x, y: GROUND_Y + 42, r: 6, a: 0.85 });
+        burst(d.x, GROUND_Y + 30, ['#bfe8ff', '#ffffff'], 12, 150);
+        blip(430); setTimeout(() => blip(350), 90);
+      }
+    } else {                                           // paddling happily on the water
+      d.x += d.vx * dt; d.ph += dt * 2;
+      if (d.x < 300) { d.x = 300; d.vx = Math.abs(d.vx); }
+      if (d.x > 880) { d.x = 880; d.vx = -Math.abs(d.vx); }
+    }
+  }
+  for (const r of ripples) { r.r += dt * 90; r.a -= dt * 0.5; }
+  ripples = ripples.filter(r => r.a > 0);
+  movePlayer(dt, 60, W - 60);
+  prompt = { x: player.x, text: 'splash the ducks!' };
+  if (exitEdge()) exitPond();
+  else if (actionEdge()) actionPond();
+}
+function actionPond() {
+  const sx = player.x + player.face * 90;              // the splash lands in front of her
+  ripples.push({ x: sx, y: GROUND_Y + 42, r: 8, a: 0.9 });
+  burst(sx, GROUND_Y + 20, ['#bfe8ff', '#ffffff', '#9fd8ff'], 16, 170);
+  player.squash = 0.22;
+  blip(560); setTimeout(() => blip(700), 120);
+  let popped = 0;
+  for (const d of ducks) {                             // any duck on the water nearby → POP up
+    if (d.h <= 0 && Math.abs(d.x - sx) < 120) {
+      d.vy = 210 + Math.random() * 150; d.h = 1;
+      d.vx = (d.vx >= 0 ? 1 : -1) * (30 + Math.random() * 50);
+      d.x += player.face * 12; popped++;
+      blip(880 + Math.random() * 120);
+      setTimeout(() => blip(1120), 90);               // a cheerful quack as they leap
+    }
+  }
+  pondPops += popped;
+  if (popped > 0) {
+    const n = 1 + Math.floor(Math.random() * 3);
+    say('pond_play_' + n, ['Splish splash!', 'The ducks are giggling!', 'Hello, duckies!'][n - 1]);
+    if (pondPops % 6 === 0) banner = { text: 'The ducks love it!', t: 0 };
+  } else say('pond_play_1', 'Splish splash!');
+  awardAcc('rain_boots', sx, GROUND_Y + 16);
+}
+function drawPond(time) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#aee3ff'); sky.addColorStop(0.62, '#d8f3ff'); sky.addColorStop(0.621, '#7cc4e8'); sky.addColorStop(1, '#5aa8d8');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  drawCloud(time, 200, 90, 1.1, 0); drawCloud(time, 700, 140, 0.8, 1); drawCloud(time, 840, 80, 1.2, 2);
+  ctx.fillStyle = '#8fd18f';                                        // grassy banks
+  ctx.fillRect(0, GROUND_Y - 40, W, 44);
+  ctx.fillStyle = '#7cc47c';
+  for (let i = 0; i < 8; i++) {
+    const gx = 20 + i * 130;
+    ctx.beginPath(); ctx.moveTo(gx, GROUND_Y - 38); ctx.lineTo(gx + 7, GROUND_Y - 62 - (i % 3) * 6); ctx.lineTo(gx + 14, GROUND_Y - 38); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = '#6fbde0'; ell(W / 2, GROUND_Y + 55, 430, 55);    // the pond
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ell(W / 2 - 110, GROUND_Y + 37, 180, 18);
+  for (let i = 0; i < 3; i++) {                                    // lily pads
+    const lx = 380 + i * 120 + Math.sin(time * 0.7 + i * 2) * 8, ly = GROUND_Y + 42 + (i % 2) * 16;
+    ctx.fillStyle = '#4da64d'; ell(lx, ly, 30, 10);
+    if (i === 1) { ctx.fillStyle = '#ff9ec6'; circle(lx, ly - 7, 6); }  // one lotus flower
+  }
+  for (const r of ripples) {                                       // expanding ripples
+    ctx.strokeStyle = `rgba(255,255,255,${r.a.toFixed(2)})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(r.x, r.y, r.r, r.r * 0.35, 0, 0, 7); ctx.stroke();
+  }
+  for (const d of ducks) {                                         // ducks — bobbing or popping
+    const bob = d.h > 0 ? 0 : Math.sin(d.ph) * 4;
+    const by = GROUND_Y + 38 - d.h + bob, dir = d.vx > 0 ? 1 : -1;
+    if (d.h > 6) { ctx.fillStyle = 'rgba(0,0,0,.12)'; ell(d.x, GROUND_Y + 42, 22 - d.h * 0.02, 6); }  // shadow
+    ctx.save(); ctx.translate(d.x, by); ctx.scale(dir * d.s, d.s);
+    ctx.fillStyle = '#ffd94d'; ell(0, 0, 26, 18);                  // body
+    circle(20, -16, 12);                                          // head
+    ctx.fillStyle = '#ff9f2e';
+    ctx.beginPath(); ctx.moveTo(30, -18); ctx.lineTo(40, -14); ctx.lineTo(30, -10); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#3a2a1a'; circle(23, -18, 2.2);               // eye
+    const flap = d.h > 0 ? Math.sin(time * 30) * 0.7 : 0;         // wing flaps mid-air
+    ctx.fillStyle = '#ffb62e'; ctx.save(); ctx.rotate(flap); ell(-4, -12, 11, 5); ctx.restore();
+    ctx.restore();
+  }
+  for (const cx of [40, 920]) {                                    // reeds + cattails at the banks
+    for (let i = 0; i < 3; i++) {
+      const rx = cx + i * 14, rh = 56 + (i % 2) * 20, sway = Math.sin(time * 1.4 + rx) * 4;
+      ctx.strokeStyle = '#4d8a4d'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(rx, GROUND_Y - 20); ctx.quadraticCurveTo(rx + sway, GROUND_Y - 60, rx + sway, GROUND_Y - 20 - rh); ctx.stroke();
+      ctx.fillStyle = '#7a4a28'; ell(rx + sway, GROUND_Y - 28 - rh, 7, 14);
+    }
+  }
+  drawPlayer(time); drawParticles(); drawPrompt(time);
+}
+
+/* ---- fairy garden state ---- */
+let fireflies = [];
+for (let i = 0; i < 10; i++) fireflies.push({ x: Math.random() * 920, y: 200 + Math.random() * 220, ph: Math.random() * 7 });
+const GARDEN_FLOWER_XS = [150, 300, 430, 560, 700, 880];
+let gardenBuds = [], gardenFairies = [], gardenBloomed = 0;
+function gardenReset(){ gardenBuds = GARDEN_FLOWER_XS.map(x => ({ x, bloom: 0, t: Math.random() * 7 })); gardenFairies = []; gardenBloomed = 0; }
+function updateGarden(dt, time) {
+  for (const f of fireflies) { f.ph += dt * 1.5; f.x += Math.sin(f.ph) * 12 * dt; f.y += Math.cos(f.ph * 0.8) * 10 * dt; }
+  for (const b of gardenBuds) b.t += dt;
+  for (const f of gardenFairies) {
+    f.ph += dt * 2; f.x += Math.cos(f.ph * 0.7) * 26 * dt; f.y += Math.sin(f.ph) * 16 * dt;
+    f.x = Math.max(40, Math.min(920, f.x)); f.y = Math.max(150, Math.min(GROUND_Y - 30, f.y));
+  }
+  movePlayer(dt, 60, W - 60);
+  let near = null, nd = 80;                                      // nearest sleeping flower
+  for (const b of gardenBuds) { const d = Math.abs(b.x - player.x); if (b.bloom < 1 && d < nd) { near = b; nd = d; } }
+  const atBell = Math.abs(200 - player.x) < 90;                  // standing under the gate bell
+  prompt = near ? { x: near.x, text: 'wake this flower' }
+        : atBell ? { x: 200, text: 'ring the bell' }
+        : { x: player.x, text: 'sprinkle magic!' };
+  if (exitEdge()) exitGarden();
+  else if (actionEdge()) { if (near) bloomFlower(near); else if (atBell) ringBell(); else actionGarden(); }
+}
+function bloomFlower(b){
+  b.bloom = 1; gardenBloomed++;
+  gardenFairies.push({ x: b.x, y: GROUND_Y - 70, ph: Math.random() * 7 });   // a fairy pops out!
+  burst(b.x, GROUND_Y - 40, ['#ffe14d','#ff9ec6','#ffffff','#c9a8ff'], 24, 210);
+  blip(740); setTimeout(() => blip(988), 130); setTimeout(() => blip(1319), 260);
+  player.squash = 0.22; player.twirl = 0.5;
+  say('garden_bloom', 'A flower wakes up! Hello, little fairy!');
+  awardAcc('bee_antennae', b.x, GROUND_Y - 60);
+  if (gardenBloomed === gardenBuds.length) { banner = { text: 'The garden is glowing!', t: 0 }; happySound(); }
+}
+function ringBell(){
+  burst(200, GROUND_Y - 250, ['#ffe14d','#ffffff'], 20, 200);
+  blip(1046); setTimeout(() => blip(1318), 150);
+  for (const f of gardenFairies) f.ph += 3;                      // the fairies swirl on the chime
+  say('garden_bell', 'Ring the bell! The fairies are dancing!');
+}
+function actionGarden() {                                        // a general sprinkle of magic
+  burst(player.x, GROUND_Y - 120, ['#ffe14d', '#ff9ec6', '#ffffff'], 22, 200);
+  blip(880); setTimeout(() => blip(1174), 160);
+  player.squash = 0.22;
+  say('garden_play', 'The fairies say welcome! Everything is glowing for you!');
+  awardAcc('bee_antennae', player.x, GROUND_Y - 120);
+}
+function drawFairyGarden(time) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#c9a8e8'); sky.addColorStop(0.6, '#ecd9f5'); sky.addColorStop(1, '#f7ecd9');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  drawCloud(time, 300, 100, 1.0, 0); drawCloud(time, 800, 150, 0.9, 1);
+  ctx.fillStyle = '#9ed69e'; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillStyle = '#8acb8a'; ctx.fillRect(0, GROUND_Y, W, 14);
+  for (let i = 0; i < 10; i++) {                                   // glowing flowers
+    const fx = 60 + i * 92, fy = GROUND_Y + 30 + (i % 3) * 18, glow = 0.5 + Math.sin(time * 2 + i) * 0.25;
+    ctx.fillStyle = `rgba(255,225,120,${glow.toFixed(2)})`; circle(fx, fy - 14, 16);
+    ctx.fillStyle = ['#ff9ec6', '#c9a8ff', '#ffd166'][i % 3];
+    for (let p = 0; p < 5; p++) circle(fx + Math.cos(p * 1.257) * 8, fy - 14 + Math.sin(p * 1.257) * 8, 5);
+    ctx.fillStyle = '#fff'; circle(fx, fy - 14, 4);
+    ctx.strokeStyle = '#4d8a4d'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - 10); ctx.stroke();
+  }
+  ctx.strokeStyle = '#7a5a3a'; ctx.lineWidth = 14; ctx.lineCap = 'round';   // the garden gate arch
+  ctx.beginPath(); ctx.moveTo(120, GROUND_Y); ctx.lineTo(120, GROUND_Y - 170); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(280, GROUND_Y); ctx.lineTo(280, GROUND_Y - 170); ctx.stroke();
+  ctx.beginPath(); ctx.arc(200, GROUND_Y - 170, 80, Math.PI, 0); ctx.stroke();
+  ctx.fillStyle = '#5aa85a';                                            // vines on the arch
+  for (let i = 0; i < 7; i++) {
+    const a = Math.PI + i * Math.PI / 6, vx = 200 + Math.cos(a) * 80, vy = GROUND_Y - 170 + Math.sin(a) * 80;
+    circle(vx, vy, 9); circle(vx + 8, vy + 10, 7);
+  }
+  ctx.fillStyle = '#fff'; circle(200, GROUND_Y - 258, 10);               // a bell on top
+  ctx.fillStyle = '#b57748';                                            // tiny fairy house
+  rr(680, GROUND_Y - 130, 150, 130, 40); ctx.fill();
+  ctx.fillStyle = '#8a5a34';
+  ctx.beginPath(); ctx.moveTo(660, GROUND_Y - 120); ctx.lineTo(755, GROUND_Y - 200); ctx.lineTo(850, GROUND_Y - 120); ctx.closePath(); ctx.fill();
+  const winGlow = 0.65 + Math.sin(time * 2.2) * 0.2;                     // warm glowing window
+  ctx.fillStyle = `rgba(255,220,130,${winGlow.toFixed(2)})`; circle(755, GROUND_Y - 70, 24);
+  ctx.strokeStyle = '#7a4a28'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(755, GROUND_Y - 70, 24, 0, 7); ctx.stroke();
+  ctx.fillStyle = '#7a4a28'; rr(735, GROUND_Y - 32, 40, 32, 8); ctx.fill();  // little door
+  for (const m of [[560, 0], [890, 0]]) {                               // mushrooms
+    ctx.fillStyle = '#fff'; rr(m[0] - 12, GROUND_Y - 4, 24, 26, 8); ctx.fill();
+    ctx.fillStyle = '#ff6b6b'; ctx.beginPath(); ctx.arc(m[0], GROUND_Y - 6, 22, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#fff'; circle(m[0] - 8, GROUND_Y - 18, 4); circle(m[0] + 7, GROUND_Y - 12, 3);
+  }
+  for (const f of fireflies) {                                          // drifting fireflies
+    const a = 0.4 + Math.sin(f.ph * 2) * 0.35;
+    ctx.fillStyle = `rgba(255,240,150,${a.toFixed(2)})`; circle(f.x, f.y, 5);
+    ctx.fillStyle = `rgba(255,240,150,${(a * 0.35).toFixed(2)})`; circle(f.x, f.y, 11);
+  }
+  for (const b of gardenBuds) {                                         // waking flowers
+    ctx.strokeStyle = '#4d8a4d'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(b.x, GROUND_Y + 6); ctx.lineTo(b.x, GROUND_Y - 14); ctx.stroke();
+    if (b.bloom > 0) {
+      const glow = 0.5 + Math.sin(b.t * 3) * 0.3;
+      ctx.fillStyle = `rgba(255,225,120,${glow.toFixed(2)})`; circle(b.x, GROUND_Y - 22, 18);
+      ctx.fillStyle = '#ff9ec6';
+      for (let p = 0; p < 5; p++) circle(b.x + Math.cos(p * 1.257) * 9, GROUND_Y - 22 + Math.sin(p * 1.257) * 9, 6);
+      ctx.fillStyle = '#fff'; circle(b.x, GROUND_Y - 22, 4);
+    } else {
+      ctx.fillStyle = '#ff9ec6'; ell(b.x, GROUND_Y - 20, 7, 10);       // still a sleepy bud
+    }
+  }
+  for (const f of gardenFairies) {                                      // little fairies come out to play
+    const fx = f.x, fy = f.y + Math.sin(f.ph * 2) * 4;
+    ctx.fillStyle = 'rgba(255,240,150,.5)'; circle(fx, fy, 10);
+    ctx.fillStyle = '#ffe14d'; circle(fx, fy, 4);
+    ctx.save(); ctx.translate(fx, fy); ctx.rotate(Math.sin(f.ph * 10) * 0.5);
+    ctx.fillStyle = 'rgba(255,180,220,.85)'; ell(-5, -4, 5, 3); ell(5, -4, 5, 3); ctx.restore();
+  }
+  drawPlayer(time); drawParticles(); drawPrompt(time);
+}
+
+/* ---- I-spy hollow ---- */
+const ISPY_ITEMS = [
+  { name: 'golden star',  x: 140,  y: 130, kind: 'star' },     // tucked in the big tree
+  { name: 'pink heart',   x: 680,  y: 405, kind: 'heart' },    // peeking over the bush
+  { name: 'blue feather', x: 880,  y: 330, kind: 'feather' },  // resting on the grass
+  { name: 'shiny shell',  x: 800,  y: 470, kind: 'shell' },    // by the little puddle
+  { name: 'tiny key',     x: 450,  y: 480, kind: 'key' },      // hiding in the grass
+];
+let ispy = null;
+function updateIspy(dt, time) {
+  movePlayer(dt, 60, W - 60);
+  if (exitEdge()) { exitIspy(); return; }
+  if (actionEdge()) actionIspy();
+  // gentle "nearby" hint: when close to something unfound, the prompt invites a look
+  let near = null;
+  for (const it of ispy.items) if (!it.found && Math.abs(it.x - player.x) < 130) near = it;
+  prompt = near ? { x: near.x, text: 'I spy something…' } : null;
+}
+function actionIspy() {
+  let best = null, bestD = 140;
+  for (const it of ispy.items) {
+    if (it.found) continue;
+    const d = Math.abs(it.x - player.x);
+    if (d < bestD) { best = it; bestD = d; }
+  }
+  if (!best) { say('ispy_none', 'Look around — something is hiding nearby!'); return; }
+  best.found = true; player.squash = 0.25; happySound();
+  burst(best.x, best.y, ['#ffe14d', '#ffffff'], 26, 200);
+  const left = ispy.items.filter(i => !i.found).length;
+  awardAcc('round_glasses', best.x, best.y);
+  if (left === 0) {
+    ispy.done = true;
+    burst(W / 2, 250, ['#ff8fb3', '#ffd166', '#b78fff', '#4db8ff', '#ffffff'], 60, 320);
+    say('ispy_alldone', 'You found everything! What amazing looking!');
+    awardAcc('gold_crown', best.x, best.y - 40);
+  } else {
+    say('ispy_found_' + best.kind + '_' + left, 'You found the ' + best.name + '! ' + left + ' more hiding!');
+  }
+}
+function drawIspyItem(it, time) {
+  const s = it.found ? 1 : 0.62, a = it.found ? 1 : 0.75;
+  ctx.save(); ctx.translate(it.x, it.y); ctx.scale(s, s); ctx.globalAlpha = a;
+  if (it.found) { ctx.fillStyle = 'rgba(255,225,120,.5)'; circle(0, 0, 30 + Math.sin(time * 4) * 3); }
+  if (it.kind === 'star') { ctx.fillStyle = '#ffd93d'; star(0, 0, 22, 10); }
+  else if (it.kind === 'heart') {
+    ctx.fillStyle = '#ff6b9d';
+    circle(-9, -4, 11); circle(9, -4, 11);
+    ctx.beginPath(); ctx.moveTo(-19, 0); ctx.lineTo(19, 0); ctx.lineTo(0, 20); ctx.closePath(); ctx.fill();
+  } else if (it.kind === 'feather') {
+    ctx.strokeStyle = '#4db8ff'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 18); ctx.quadraticCurveTo(6, 0, -4, -20); ctx.stroke();
+    ctx.fillStyle = '#7cc4ff'; ell(-2, -4, 10, 16);
+  } else if (it.kind === 'shell') {
+    ctx.fillStyle = '#ffb3d9';
+    ctx.beginPath(); ctx.arc(0, 4, 18, Math.PI, 0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#e88bb8'; ctx.lineWidth = 2.5;
+    for (let r = -2; r <= 2; r++) { ctx.beginPath(); ctx.moveTo(r * 7, -12); ctx.lineTo(r * 3, 2); ctx.stroke(); }
+  } else if (it.kind === 'key') {
+    ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(-6, -6, 9, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(1, 1); ctx.lineTo(14, 14); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(9, 9); ctx.lineTo(14, 5); ctx.stroke();
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+function drawIspy(time) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#bfe3ff'); sky.addColorStop(0.62, '#e8f6ff'); sky.addColorStop(0.621, '#8fd18f'); sky.addColorStop(1, '#6fb86f');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#7a5a3a';                                            // big tree on the left
+  rr(90, 220, 46, 240, 14); ctx.fill();
+  ctx.fillStyle = '#5aa85a';
+  circle(60, 200, 70); circle(160, 190, 80); circle(110, 120, 75);
+  ctx.fillStyle = '#6fc06f'; circle(90, 160, 45); circle(140, 140, 40);
+  for (const bx of [520, 680, 820]) {                                // bushes to peek behind
+    ctx.fillStyle = '#5aa85a'; circle(bx, GROUND_Y - 20, 44); circle(bx + 34, GROUND_Y - 12, 32);
+    ctx.fillStyle = '#6fc06f'; circle(bx + 10, GROUND_Y - 30, 22);
+  }
+  ctx.fillStyle = '#9ed69e';                                            // grass tufts
+  for (let i = 0; i < 20; i++) {
+    const gx = (i * 67) % W, sway = Math.sin(time * 1.6 + i) * 3;
+    ctx.strokeStyle = '#4d8a4d'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(gx, GROUND_Y + 40); ctx.quadraticCurveTo(gx + sway, GROUND_Y + 28, gx + sway, GROUND_Y + 16); ctx.stroke();
+  }
+  ctx.fillStyle = '#7cc4e8'; ell(800, GROUND_Y + 40, 90, 20);            // little puddle
+  ctx.fillStyle = 'rgba(255,255,255,.4)'; ell(775, GROUND_Y + 34, 40, 8);
+  for (const it of ispy.items) drawIspyItem(it, time);
+  drawPlayer(time); drawParticles(); drawPrompt(time);
+}
+
+/* ---- dragon flight ---- */
+function updateFlight(dt, time) {
+  flightT += dt;
+  updateAmbient(dt, time);
+  if (actionEdge() || exitEdge() || flightT > 26) landFlight();   // ★ lands early; otherwise one gentle loop
+}
+function drawFlight(time) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#8ecdf5'); sky.addColorStop(0.55, '#c4e7fb'); sky.addColorStop(1, '#ffe9c9');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#fff3b0'; circle(850, 110, 54);                       // sun
+  ctx.fillStyle = 'rgba(255,243,176,.35)'; circle(850, 110, 84);
+  const cols = ['#ff8fb3', '#ffb066', '#ffe14d', '#8fe08f', '#7cc4ff', '#c9a8ff'];  // rainbow
+  for (let i = 0; i < 6; i++) {
+    ctx.strokeStyle = cols[i]; ctx.lineWidth = 13;
+    ctx.beginPath(); ctx.arc(640, 640, 330 - i * 13, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+  }
+  for (let i = 0; i < 6; i++) {                                         // drifting clouds (parallax scroll)
+    const cx = ((i * 340 - flightT * 60) % (W + 400) + W + 400) % (W + 400) - 200;
+    drawCloud(time, cx, 90 + (i % 3) * 70, 0.9 + (i % 2) * 0.5, i);
+  }
+  for (let i = 0; i < 3; i++) {                                         // birds keeping pace
+    const bx = W - ((flightT * 55 + i * 260) % (W + 200)) + 100, by = 200 + i * 60 + Math.sin(time * 2 + i) * 12;
+    ctx.strokeStyle = '#5a6a8a'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+    const w = Math.sin(time * 9 + i * 2) * 9;
+    ctx.beginPath(); ctx.moveTo(bx - 14, by + w); ctx.quadraticCurveTo(bx, by - 5, bx + 14, by + w); ctx.stroke();
+  }
+  ctx.fillStyle = '#9ed69e';                                             // patchwork fields far below
+  ctx.fillRect(0, H - 90, W, 90);
+  ctx.fillStyle = '#8acb8a';
+  for (let i = 0; i < 8; i++) ctx.fillRect(((i * 220 - flightT * 60) % (W + 220) + W + 220) % (W + 220) - 110, H - 90, 110, 90);
+  const bob = Math.sin(time * 2.2) * 10, fx = 480, fy = 300 + bob;      // Bramble + rider
+  ctx.save(); ctx.translate(fx, fy);
+  const flap = Math.sin(time * 5) * 0.5;
+  ctx.fillStyle = '#7fd67f';                                            // wings
+  for (const wd of [-1, 1]) {
+    ctx.save(); ctx.rotate(wd * (0.5 + flap * 0.3));
+    ctx.beginPath(); ctx.ellipse(wd * 55, -30, 46, 20, wd * 0.5, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = '#8fe08f'; ell(0, 0, 70, 44);                         // body
+  circle(62, -28, 26);                                                  // head
+  ctx.fillStyle = '#6fc06f';
+  ctx.beginPath(); ctx.moveTo(48, -46); ctx.lineTo(54, -66); ctx.lineTo(62, -48); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(66, -48); ctx.lineTo(74, -66); ctx.lineTo(78, -46); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff'; circle(68, -32, 8); circle(56, -34, 8);
+  ctx.fillStyle = '#3a2a1a'; circle(69, -31, 3.5); circle(57, -33, 3.5);
+  ctx.strokeStyle = '#6fc06f'; ctx.lineWidth = 10; ctx.lineCap = 'round';// tail
+  ctx.beginPath(); ctx.moveTo(-64, 6); ctx.quadraticCurveTo(-110, 10 + Math.sin(time * 3) * 8, -130, -6); ctx.stroke();
+  drawCharacter(CHARACTERS[charIndex].id, colorIndex, 6, -72, 0.85, time, 1);         // Madison riding!
+  ctx.restore();
+  drawParticles();
+  pill(W / 2, 560, '★  land whenever you like');
+}
+
+/* ================= MAIN DRAW ================= */
+function draw(time) {
+  ctx.clearRect(0, 0, W, H);
+  if (scene === 'title') { drawTitle(time); if (ward.open) drawWardrobe(time); return; }
+  if (scene === 'meadow') {
+    drawSky(time); drawHills(); drawCarriage(time); drawTrees(time); drawGround(time);
+    drawSign(300, 'Cozy Cottage'); drawSign(1020, 'Flower Garden'); drawSign(1650, 'Painting Corner');
+    drawSign(2250, 'Word Stones'); drawSign(2750, "Bramble's Hill");
+    drawSign(3150, 'Pond'); drawSign(3450, 'Garden Gate'); drawSign(3750, 'I Spy Hollow');
+    drawCottage(); drawGarden(time); drawPaintCorner(); drawWordStones(time);
+    drawDragonHill(); drawDragon(time); drawButterflies(time); drawMarble(time);
+    drawPlayer(time); drawParticles(); drawLeaves(); drawForeground(time);
+    drawHUD(time); drawPrompt(time); drawMarbleArrow(time);
+  } else if (scene === 'house') {
+    drawHouseScene(time); drawMabel(time); drawPlayer(time); drawParticles(); drawPrompt(time);
+  } else if (scene === 'dollroom') {
+    drawDollRoom(time);
+    for (const d of DOLLS) drawDoll(d, time);
+    drawPlayer(time); drawParticles(); drawPrompt(time);
+  } else if (scene === 'dollhouse') {
+    drawDollhouseScene(time); drawPlayer(time); drawParticles(); drawPrompt(time);
+  } else if (scene === 'paint') {
+    drawPaintScene(time); drawParticles();
+  } else if (scene === 'pond') {
+    drawPond(time);
+  } else if (scene === 'garden') {
+    drawFairyGarden(time);
+  } else if (scene === 'ispy') {
+    drawIspy(time);
+  } else if (scene === 'flight') {
+    drawFlight(time);
+  }
+  drawBanner();                     // zone names + accessory awards, in every scene
+  if (ward.open) drawWardrobe(time);        // dress-up inventory (doll-room station)
+  if (invite) drawInvite(time);            // full-screen grown-up activity invitation
+  if (fadeT >= 0) {                        // warm cream transition veil (never black)
+    const a = Math.sin(Math.PI * Math.min(1, fadeT));
+    ctx.fillStyle = 'rgba(255,248,232,' + (a * 0.97).toFixed(3) + ')';
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+// Full-screen gentle invitation: the outfit is earned by moving with a grown-up.
+// ★ = the grown-up confirms ("We did it!"). ✕ = keep playing; the outfit waits.
+function drawInvite(time) {
+  const okey = invite.outfit, outfit = OUTFITS[okey];
+  ctx.fillStyle = 'rgba(45,50,90,.45)'; ctx.fillRect(0, 0, W, H);
+  const bw = 760, bh = 470, bx = W / 2 - bw / 2, by = H / 2 - bh / 2;
+  const float = Math.sin(time * 1.8) * 4;
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; rr(bx + 6, by + 12 + float, bw, bh, 40); ctx.fill();
+  ctx.fillStyle = '#fffdf4'; rr(bx, by + float, bw, bh, 40); ctx.fill();
+  ctx.strokeStyle = outfit.color; ctx.lineWidth = 6;
+  rr(bx, by + float, bw, bh, 40); ctx.stroke();
+  const savedLook = look; look = okey;
+  drawCharacter(CHARACTERS[charIndex].id, colorIndex, W / 2, by + 118 + float, 1.0, time, 1);
+  look = savedLook;
+  outlineText('A challenge for you and a grown-up!', W / 2, by + 52 + float,
+    'bold 34px "Comic Sans MS",sans-serif', '#5a4a8a', '#fff', 0);
+  ctx.fillStyle = '#4a4468'; ctx.font = '26px "Comic Sans MS",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  wrapText(outfit.activity, W / 2, by + 216 + float, bw - 120, 34);
+  outlineText('Then your ' + outfit.name + ' is yours!', W / 2, by + 302 + float,
+    'bold 28px "Comic Sans MS",sans-serif', outfit.color, '#fff', 0);
+  const btnW = 360, btnH = 64, btnX = W / 2 - btnW / 2, btnY = by + 336 + float;
+  ctx.fillStyle = '#7bc96f'; rr(btnX, btnY, btnW, btnH, 32); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 3; rr(btnX, btnY, btnW, btnH, 32); ctx.stroke();
+  outlineText('★  We did it!', W / 2, btnY + btnH / 2 + 1,
+    'bold 30px "Comic Sans MS",sans-serif', '#fff', 'rgba(40,80,40,.45)', 6);
+  ctx.fillStyle = '#8a86a8'; ctx.font = '22px "Comic Sans MS",sans-serif';
+  ctx.fillText('✕  keep playing', W / 2, by + 436 + float);
+}
+function wrapText(text, cx, y, maxW, lh) {
+  const words = text.split(' '), lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? line + ' ' + w : w;
+    if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; }
+    else line = t;
+  }
+  lines.push(line);
+  const y0 = y - (lines.length - 1) * lh / 2;
+  lines.forEach((l, i) => ctx.fillText(l, cx, y0 + i * lh));
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
